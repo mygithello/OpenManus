@@ -1,3 +1,4 @@
+import os
 import threading
 import tomllib
 from pathlib import Path
@@ -166,10 +167,28 @@ class Config:
             k: v for k, v in raw_config.get("llm", {}).items() if isinstance(v, dict)
         }
 
+        # Define env var lookup table for different api_types
+        _API_KEY_ENV_VARS = {
+            "openai": "DASHSCOPE_API_KEY",
+            "aws": "AWS_API_KEY",
+            "azure": "AZURE_OPENAI_API_KEY",
+            "ollama": "OLLAMA_API_KEY",
+            "jiekou": "JIEKOU_API_KEY",
+        }
+
+        # Get api_key from config file first, then fall back to environment variable
+        api_key = base_llm.get("api_key") or ""
+        if not api_key:
+            env_var = _API_KEY_ENV_VARS.get(base_llm.get("api_type", "openai"), "DASHSCOPE_API_KEY")
+            api_key = os.environ.get(env_var, "")
+            if not api_key:
+                # Last fallback: try common env var names
+                api_key = os.environ.get("OPENAI_API_KEY", os.environ.get("DASHSCOPE_API_KEY", ""))
+
         default_settings = {
             "model": base_llm.get("model"),
             "base_url": base_llm.get("base_url"),
-            "api_key": base_llm.get("api_key"),
+            "api_key": api_key,
             "max_tokens": base_llm.get("max_tokens", 4096),
             "max_input_tokens": base_llm.get("max_input_tokens"),
             "temperature": base_llm.get("temperature", 1.0),
@@ -231,8 +250,14 @@ class Config:
             "llm": {
                 "default": default_settings,
                 **{
-                    name: {**default_settings, **override_config}
+                    name: {
+                        **merged,
+                        # If override has empty api_key, keep the default's resolved key
+                        **({"api_key": default_settings["api_key"]} if not merged.get("api_key") else {}),
+                    }
                     for name, override_config in llm_overrides.items()
+                    # Start with default, then apply overrides
+                    if (merged := {**default_settings, **override_config}) or True
                 },
             },
             "sandbox": sandbox_settings,
