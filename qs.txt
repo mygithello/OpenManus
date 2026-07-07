@@ -1,1 +1,17 @@
 对 http://class.wucai.com 进行SEO审查，提供详细的优化报告和可操作的建议，写入到 .md
+
+==============================================================================
+
+## 注意事项
+
+### 1. API Key 配置（config/config.toml）
+- `api_key = ""` 时，程序自动从环境变量读取（优先级：配置值 > DASHSCOPE_API_KEY > OPENAI_API_KEY）
+- 建议通过 `export DASHSCOPE_API_KEY=sk-xxx` 设置，不要硬编码密钥
+
+### 2. 浏览器 headless 模式（config/config.toml [browser]）
+- 有显示器环境：`headless = false`，用完整 Chromium（当前配置）
+- 无显示器服务器：`headless = true`，需先执行 `playwright install chromium-headless-shell`
+- 当前 `headless_shell-1161` 未安装，改 true 会报错
+
+### 3. 生成报告位置
+- 自动保存到 workspace/ 目录下的 .md 文件
