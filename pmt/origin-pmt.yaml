@@ -17,3 +17,7 @@ pmt:
     timestamp: "2026-07-10T14:16:44+08:00"
     source: user
     content: 参考 ylk-pmt 的行为模式（用户提示词任务执行完毕后自动触发，git自动提交等），写一个技能 ylk-spec，基于用户输入的提示词等任务命令操作表述，自动分析整理 spec 规格文档，自动管理汇总项目目录下的 spec/ 目录。该技能内部可以使用 ylk-spec-routing 进行骨架生成。原生项目自行构建，已有 spec 则在已有基础上增量更新。支持 ylk-spec --close / --open 切换自动触发开关。
+  - seq: 5
+    timestamp: "2026-07-10T14:25:59.721927+08:00"
+    source: user
+    content: 检查 ylk-pmt / ylk-spec 自动触发机制的问题，包括 hook_append.py 函数调用早于定义、SKILL.md 描述不准确、f-string 缺失、ylk-spec-state 未初始化、yaml 模块缺失等
