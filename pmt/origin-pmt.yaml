@@ -1,0 +1,10 @@
+pmt:
+- seq: 1
+  timestamp: '2026-07-10T13:47:56.249399+08:00'
+  source: user
+  content: 参考分析样例项目：/home/yunlk/soft/dev/apps/sources/OpenManus-cy 的涉及的中文汉化涉及的修改的代码，对当前项目/home/yunlk/soft/dev/apps/OpenManus
+    进行相同的汉化，运行app.py, main.py进行验证
+- seq: 2
+  timestamp: '2026-07-10T13:47:56.249422+08:00'
+  source: user
+  content: 我有个 ylk-pmt的技能，分析下为什么刚才的提示词任务结束后，没有在当前项目的根目录下append ，没有记录我的历史提示词，没有触发找原因并修复这个skill
