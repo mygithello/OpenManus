@@ -1,7 +1,8 @@
+import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BaseTool(ABC, BaseModel):
@@ -9,8 +10,7 @@ class BaseTool(ABC, BaseModel):
     description: str
     parameters: Optional[dict] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     async def __call__(self, **kwargs) -> Any:
         """Execute the tool with given parameters."""
@@ -31,6 +31,18 @@ class BaseTool(ABC, BaseModel):
             },
         }
 
+    def success_response(self, data: Union[Dict[str, Any], str]) -> "ToolResult":
+        """Create a successful tool result."""
+        if isinstance(data, str):
+            text = data
+        else:
+            text = json.dumps(data, indent=2)
+        return ToolResult(output=text)
+
+    def fail_response(self, msg: str) -> "ToolResult":
+        """Create a failed tool result."""
+        return ToolResult(error=msg)
+
 
 class ToolResult(BaseModel):
     """表示工具执行的结果。"""
@@ -40,8 +52,7 @@ class ToolResult(BaseModel):
     base64_image: Optional[str] = Field(default=None)
     system: Optional[str] = Field(default=None)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __bool__(self):
         return any(getattr(self, field) for field in self.__fields__)

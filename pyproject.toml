@@ -3,7 +3,7 @@ name = "openmanus"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12, <3.14"
 dependencies = [
     "aiofiles~=24.1.0",
     "baidusearch~=1.0.3",
@@ -13,6 +13,7 @@ dependencies = [
     "browsergym~=0.13.3",
     "colorama~=0.4.6",
     "datasets~=3.4.1",
+    "daytona-sdk>=0.2.0",
     "docker~=7.1.0",
     "duckduckgo-search~=7.5.3",
     "fastapi~=0.115.11",
@@ -42,5 +43,8 @@ dependencies = [
 ]
 
 [[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://pypi.org/simple"
 default = true
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]

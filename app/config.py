@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def get_project_root() -> Path:
@@ -99,6 +99,26 @@ class SandboxSettings(BaseModel):
     )
 
 
+class DaytonaSettings(BaseModel):
+    """Daytona 云沙箱配置"""
+
+    daytona_api_key: Optional[str] = Field(
+        None, description="Daytona API 密钥，如未设置将从环境变量 DAYTONA_API_KEY 读取"
+    )
+    daytona_server_url: Optional[str] = Field(
+        "https://app.daytona.io/api", description="Daytona 服务器 URL"
+    )
+    daytona_target: Optional[str] = Field("us", description="区域选择：'eu' 或 'us'")
+    sandbox_image_name: Optional[str] = Field("whitezxj/sandbox:0.1.0", description="沙箱镜像名称")
+    sandbox_entrypoint: Optional[str] = Field(
+        "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf",
+        description="沙箱入口点",
+    )
+    VNC_password: Optional[str] = Field(
+        "123456", description="沙箱中 VNC 服务的密码"
+    )
+
+
 class MCPSettings(BaseModel):
     """MCP（Model Context Protocol）的配置"""
 
@@ -119,9 +139,11 @@ class AppConfig(BaseModel):
         None, description="搜索配置"
     )
     mcp_config: Optional[MCPSettings] = Field(None, description="MCP 配置")
+    daytona_config: Optional[DaytonaSettings] = Field(
+        None, description="Daytona 配置"
+    )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Config:
@@ -239,6 +261,15 @@ class Config:
         else:
             sandbox_settings = SandboxSettings()
 
+        # Handle Daytona configuration with env var fallback
+        daytona_config = raw_config.get("daytona", {})
+        daytona_settings = None
+        if daytona_config:
+            # Fall back to env var for API key if not set in config
+            if not daytona_config.get("daytona_api_key"):
+                daytona_config["daytona_api_key"] = os.environ.get("DAYTONA_API_KEY", "")
+            daytona_settings = DaytonaSettings(**daytona_config)
+
         mcp_config = raw_config.get("mcp", {})
         mcp_settings = None
         if mcp_config:
@@ -264,6 +295,7 @@ class Config:
             "browser_config": browser_settings,
             "search_config": search_settings,
             "mcp_config": mcp_settings,
+            "daytona_config": daytona_settings,
         }
 
         self._config = AppConfig(**config_dict)
@@ -275,6 +307,11 @@ class Config:
     @property
     def sandbox(self) -> SandboxSettings:
         return self._config.sandbox
+
+    @property
+    def daytona(self) -> Optional[DaytonaSettings]:
+        """Get the Daytona configuration"""
+        return self._config.daytona_config
 
     @property
     def browser_config(self) -> Optional[BrowserSettings]:

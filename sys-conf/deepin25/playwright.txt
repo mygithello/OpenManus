@@ -82,3 +82,11 @@ playwright --version
 playwright install chromium
 
 如果运行时还提示缺库，根据具体缺失的 .so 文件用 apt-file search 或 dpkg -S 查找对应的包名补充安装。
+
+lk@yunlk-PC:~$ playwright install chromium
+BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64.
+
+Downloading Chrome for Testing 149.0.7827.55 (playwright chromium v1228) from https://cdn.playwright.dev/builds/cft/149.0.7827.55/linux64/chrome-linux64.zip
+
+
+版本 141.0.7390.107（正式版本） （64 位）
