@@ -1,13 +1,13 @@
 class ToolError(Exception):
-    """Raised when a tool encounters an error."""
+    """当工具遇到错误时引发。"""
 
     def __init__(self, message):
         self.message = message
 
 
 class OpenManusError(Exception):
-    """Base exception for all OpenManus errors"""
+    """所有 OpenManus 错误的基础异常"""
 
 
 class TokenLimitExceeded(OpenManusError):
-    """Exception raised when the token limit is exceeded"""
+    """当超过 token 限制时引发的异常"""

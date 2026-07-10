@@ -33,7 +33,7 @@ class BaseTool(ABC, BaseModel):
 
 
 class ToolResult(BaseModel):
-    """Represents the result of a tool execution."""
+    """表示工具执行的结果。"""
 
     output: Any = Field(default=None)
     error: Optional[str] = Field(default=None)

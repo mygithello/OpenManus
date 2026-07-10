@@ -20,50 +20,50 @@ from app.tool.search.base import SearchItem
 
 
 class SearchResult(BaseModel):
-    """Represents a single search result returned by a search engine."""
+    """表示搜索引擎返回的单个搜索结果。"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    position: int = Field(description="Position in search results")
-    url: str = Field(description="URL of the search result")
-    title: str = Field(default="", description="Title of the search result")
+    position: int = Field(description="在搜索结果中的位置")
+    url: str = Field(description="搜索结果的 URL")
+    title: str = Field(default="", description="搜索结果的标题")
     description: str = Field(
-        default="", description="Description or snippet of the search result"
+        default="", description="搜索结果的描述或摘要"
     )
-    source: str = Field(description="The search engine that provided this result")
+    source: str = Field(description="提供此结果的搜索引擎")
     raw_content: Optional[str] = Field(
-        default=None, description="Raw content from the search result page if available"
+        default=None, description="如果可用，来自搜索结果页面的原始内容"
     )
 
     def __str__(self) -> str:
-        """String representation of a search result."""
+        """搜索结果的字符串表示。"""
         return f"{self.title} ({self.url})"
 
 
 class SearchMetadata(BaseModel):
-    """Metadata about the search operation."""
+    """关于搜索操作的元数据。"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    total_results: int = Field(description="Total number of results found")
-    language: str = Field(description="Language code used for the search")
-    country: str = Field(description="Country code used for the search")
+    total_results: int = Field(description="找到的结果总数")
+    language: str = Field(description="用于搜索的语言代码")
+    country: str = Field(description="用于搜索的国家代码")
 
 
 class SearchResponse(ToolResult):
-    """Structured response from the web search tool, inheriting ToolResult."""
+    """来自网页搜索工具的结构化响应，继承自 ToolResult。"""
 
-    query: str = Field(description="The search query that was executed")
+    query: str = Field(description="执行的搜索查询")
     results: List[SearchResult] = Field(
-        default_factory=list, description="List of search results"
+        default_factory=list, description="搜索结果列表"
     )
     metadata: Optional[SearchMetadata] = Field(
-        default=None, description="Metadata about the search"
+        default=None, description="关于搜索的元数据"
     )
 
     @model_validator(mode="after")
     def populate_output(self) -> "SearchResponse":
-        """Populate output or error fields based on search results."""
+        """根据搜索结果填充输出或错误字段。"""
         if self.error:
             return self
 
@@ -104,26 +104,26 @@ class SearchResponse(ToolResult):
 
 
 class WebContentFetcher:
-    """Utility class for fetching web content."""
+    """用于获取网页内容的工具类。"""
 
     @staticmethod
     async def fetch_content(url: str, timeout: int = 10) -> Optional[str]:
         """
-        Fetch and extract the main content from a webpage.
+        从网页获取并提取主要内容。
 
         Args:
-            url: The URL to fetch content from
-            timeout: Request timeout in seconds
+            url: 要获取内容的 URL
+            timeout: 请求超时时间（秒）
 
         Returns:
-            Extracted text content or None if fetching fails
+            提取的文本内容，如果获取失败则返回 None
         """
         headers = {
             "WebSearch": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
 
         try:
-            # Use asyncio to run requests in a thread pool
+            # 使用 asyncio 在线程池中运行 requests
             response = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: requests.get(url, headers=headers, timeout=timeout)
             )
@@ -134,17 +134,17 @@ class WebContentFetcher:
                 )
                 return None
 
-            # Parse HTML with BeautifulSoup
+            # 使用 BeautifulSoup 解析 HTML
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # Remove script and style elements
+            # 删除 script 和 style 元素
             for script in soup(["script", "style", "header", "footer", "nav"]):
                 script.extract()
 
-            # Get text content
+            # 获取文本内容
             text = soup.get_text(separator="\n", strip=True)
 
-            # Clean up whitespace and limit size (100KB max)
+            # 清理空白并限制大小（最大 100KB）
             text = " ".join(text.split())
             return text[:10000] if text else None
 
@@ -154,37 +154,37 @@ class WebContentFetcher:
 
 
 class WebSearch(BaseTool):
-    """Search the web for information using various search engines."""
+    """使用各种搜索引擎搜索网页信息。"""
 
     name: str = "web_search"
-    description: str = """Search the web for real-time information about any topic.
-    This tool returns comprehensive search results with relevant information, URLs, titles, and descriptions.
-    If the primary search engine fails, it automatically falls back to alternative engines."""
+    description: str = """搜索网页以获取关于任何主题的实时信息。
+    此工具返回包含相关信息、URL、标题和描述的全面搜索结果。
+    如果主要搜索引擎失败，它会自动回退到备用引擎。"""
     parameters: dict = {
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "(required) The search query to submit to the search engine.",
+                "description": "（必需）要提交给搜索引擎的搜索查询。",
             },
             "num_results": {
                 "type": "integer",
-                "description": "(optional) The number of search results to return. Default is 5.",
+                "description": "（可选）要返回的搜索结果数量。默认为 5。",
                 "default": 5,
             },
             "lang": {
                 "type": "string",
-                "description": "(optional) Language code for search results (default: en).",
+                "description": "（可选）搜索结果的语言代码（默认: en）。",
                 "default": "en",
             },
             "country": {
                 "type": "string",
-                "description": "(optional) Country code for search results (default: us).",
+                "description": "（可选）搜索结果的国家代码（默认: us）。",
                 "default": "us",
             },
             "fetch_content": {
                 "type": "boolean",
-                "description": "(optional) Whether to fetch full content from result pages. Default is false.",
+                "description": "（可选）是否从结果页面获取完整内容。默认为 false。",
                 "default": False,
             },
         },
@@ -207,19 +207,19 @@ class WebSearch(BaseTool):
         fetch_content: bool = False,
     ) -> SearchResponse:
         """
-        Execute a Web search and return detailed search results.
+        执行网页搜索并返回详细的搜索结果。
 
         Args:
-            query: The search query to submit to the search engine
-            num_results: The number of search results to return (default: 5)
-            lang: Language code for search results (default from config)
-            country: Country code for search results (default from config)
-            fetch_content: Whether to fetch content from result pages (default: False)
+            query: 要提交给搜索引擎的搜索查询
+            num_results: 要返回的搜索结果数量（默认: 5）
+            lang: 搜索结果的语言代码（默认来自配置）
+            country: 搜索结果的国家代码（默认来自配置）
+            fetch_content: 是否从结果页面获取内容（默认: False）
 
         Returns:
-            A structured response containing search results and metadata
+            包含搜索结果和元数据的结构化响应
         """
-        # Get settings from config
+        # 从配置获取设置
         retry_delay = (
             getattr(config.search_config, "retry_delay", 60)
             if config.search_config
@@ -231,7 +231,7 @@ class WebSearch(BaseTool):
             else 3
         )
 
-        # Use config values for lang and country if not specified
+        # 如果未指定，使用配置中的 lang 和 country 值
         if lang is None:
             lang = (
                 getattr(config.search_config, "lang", "en")
@@ -248,16 +248,16 @@ class WebSearch(BaseTool):
 
         search_params = {"lang": lang, "country": country}
 
-        # Try searching with retries when all engines fail
+        # 当所有引擎都失败时，尝试重试搜索
         for retry_count in range(max_retries + 1):
             results = await self._try_all_engines(query, num_results, search_params)
 
             if results:
-                # Fetch content if requested
+                # 如果请求，则获取内容
                 if fetch_content:
                     results = await self._fetch_content_for_results(results)
 
-                # Return a successful structured response
+                # 返回成功的结构化响应
                 return SearchResponse(
                     status="success",
                     query=query,
@@ -270,7 +270,7 @@ class WebSearch(BaseTool):
                 )
 
             if retry_count < max_retries:
-                # All engines failed, wait and retry
+                # 所有引擎都失败，等待并重试
                 logger.warning(
                     f"All search engines failed. Waiting {retry_delay} seconds before retry {retry_count + 1}/{max_retries}..."
                 )
@@ -280,7 +280,7 @@ class WebSearch(BaseTool):
                     f"All search engines failed after {max_retries} retries. Giving up."
                 )
 
-        # Return an error response
+        # 返回错误响应
         return SearchResponse(
             query=query,
             error="All search engines failed to return results after multiple retries.",
@@ -290,7 +290,7 @@ class WebSearch(BaseTool):
     async def _try_all_engines(
         self, query: str, num_results: int, search_params: Dict[str, Any]
     ) -> List[SearchResult]:
-        """Try all search engines in the configured order."""
+        """按配置的顺序尝试所有搜索引擎。"""
         engine_order = self._get_engine_order()
         failed_engines = []
 
@@ -309,13 +309,13 @@ class WebSearch(BaseTool):
                     f"Search successful with {engine_name.capitalize()} after trying: {', '.join(failed_engines)}"
                 )
 
-            # Transform search items into structured results
+            # 将搜索项转换为结构化结果
             return [
                 SearchResult(
                     position=i + 1,
                     url=item.url,
                     title=item.title
-                    or f"Result {i+1}",  # Ensure we always have a title
+                    or f"Result {i+1}",  # 确保我们始终有一个标题
                     description=item.description or "",
                     source=engine_name,
                 )
@@ -329,17 +329,17 @@ class WebSearch(BaseTool):
     async def _fetch_content_for_results(
         self, results: List[SearchResult]
     ) -> List[SearchResult]:
-        """Fetch and add web content to search results."""
+        """获取网页内容并将其添加到搜索结果中。"""
         if not results:
             return []
 
-        # Create tasks for each result
+        # 为每个结果创建任务
         tasks = [self._fetch_single_result_content(result) for result in results]
 
-        # Type annotation to help type checker
+        # 类型注释以帮助类型检查器
         fetched_results = await asyncio.gather(*tasks)
 
-        # Explicit validation of return type
+        # 显式验证返回类型
         return [
             (
                 result
@@ -350,7 +350,7 @@ class WebSearch(BaseTool):
         ]
 
     async def _fetch_single_result_content(self, result: SearchResult) -> SearchResult:
-        """Fetch content for a single search result."""
+        """获取单个搜索结果的内容。"""
         if result.url:
             content = await self.content_fetcher.fetch_content(result.url)
             if content:
@@ -358,7 +358,7 @@ class WebSearch(BaseTool):
         return result
 
     def _get_engine_order(self) -> List[str]:
-        """Determines the order in which to try search engines."""
+        """确定尝试搜索引擎的顺序。"""
         preferred = (
             getattr(config.search_config, "engine", "google").lower()
             if config.search_config
@@ -371,7 +371,7 @@ class WebSearch(BaseTool):
             else []
         )
 
-        # Start with preferred engine, then fallbacks, then remaining engines
+        # 从首选引擎开始，然后是备用引擎，最后是剩余的引擎
         engine_order = [preferred] if preferred in self._search_engine else []
         engine_order.extend(
             [
@@ -394,7 +394,7 @@ class WebSearch(BaseTool):
         num_results: int,
         search_params: Dict[str, Any],
     ) -> List[SearchItem]:
-        """Execute search with the given engine and parameters."""
+        """使用给定的引擎和参数执行搜索。"""
         return await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: list(

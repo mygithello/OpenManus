@@ -6,22 +6,22 @@ from app.exceptions import ToolError
 from app.tool.base import BaseTool, CLIResult
 
 
-_BASH_DESCRIPTION = """Execute a bash command in the terminal.
-* Long running commands: For commands that may run indefinitely, it should be run in the background and the output should be redirected to a file, e.g. command = `python3 app.py > server.log 2>&1 &`.
-* Interactive: If a bash command returns exit code `-1`, this means the process is not yet finished. The assistant must then send a second call to terminal with an empty `command` (which will retrieve any additional logs), or it can send additional text (set `command` to the text) to STDIN of the running process, or it can send command=`ctrl+c` to interrupt the process.
-* Timeout: If a command execution result says "Command timed out. Sending SIGINT to the process", the assistant should retry running the command in the background.
+_BASH_DESCRIPTION = """在终端中执行 bash 命令。
+* 长时间运行的命令：对于可能无限期运行的命令，应该在后台运行并将输出重定向到文件，例如 command = `python3 app.py > server.log 2>&1 &`。
+* 交互式：如果 bash 命令返回退出代码 `-1`，这意味着进程尚未完成。助手必须向终端发送第二次调用，使用空的 `command`（这将检索任何额外的日志），或者它可以向正在运行的进程的 STDIN 发送附加文本（将 `command` 设置为文本），或者它可以发送 command=`ctrl+c` 来中断进程。
+* 超时：如果命令执行结果说 "Command timed out. Sending SIGINT to the process"，助手应该重试在后台运行该命令。
 """
 
 
 class _BashSession:
-    """A session of a bash shell."""
+    """bash shell 的会话。"""
 
     _started: bool
     _process: asyncio.subprocess.Process
 
     command: str = "/bin/bash"
-    _output_delay: float = 0.2  # seconds
-    _timeout: float = 120.0  # seconds
+    _output_delay: float = 0.2  # 秒
+    _timeout: float = 120.0  # 秒
     _sentinel: str = "<<exit>>"
 
     def __init__(self):
@@ -45,7 +45,7 @@ class _BashSession:
         self._started = True
 
     def stop(self):
-        """Terminate the bash shell."""
+        """终止 bash shell。"""
         if not self._started:
             raise ToolError("Session has not started.")
         if self._process.returncode is not None:
@@ -53,7 +53,7 @@ class _BashSession:
         self._process.terminate()
 
     async def run(self, command: str):
-        """Execute a command in the bash shell."""
+        """在 bash shell 中执行命令。"""
         if not self._started:
             raise ToolError("Session has not started.")
         if self._process.returncode is not None:
@@ -66,29 +66,29 @@ class _BashSession:
                 f"timed out: bash has not returned in {self._timeout} seconds and must be restarted",
             )
 
-        # we know these are not None because we created the process with PIPEs
+        # 我们知道这些不是 None，因为我们使用 PIPEs 创建了进程
         assert self._process.stdin
         assert self._process.stdout
         assert self._process.stderr
 
-        # send command to the process
+        # 向进程发送命令
         self._process.stdin.write(
             command.encode() + f"; echo '{self._sentinel}'\n".encode()
         )
         await self._process.stdin.drain()
 
-        # read output from the process, until the sentinel is found
+        # 从进程读取输出，直到找到标记
         try:
             async with asyncio.timeout(self._timeout):
                 while True:
                     await asyncio.sleep(self._output_delay)
-                    # if we read directly from stdout/stderr, it will wait forever for
-                    # EOF. use the StreamReader buffer directly instead.
+                    # 如果我们直接从 stdout/stderr 读取，它将永远等待 EOF。
+                    # 改为直接使用 StreamReader 缓冲区。
                     output = (
                         self._process.stdout._buffer.decode()
                     )  # pyright: ignore[reportAttributeAccessIssue]
                     if self._sentinel in output:
-                        # strip the sentinel and break
+                        # 去除标记并中断
                         output = output[: output.index(self._sentinel)]
                         break
         except asyncio.TimeoutError:
@@ -106,7 +106,7 @@ class _BashSession:
         if error.endswith("\n"):
             error = error[:-1]
 
-        # clear the buffers so that the next output can be read correctly
+        # 清除缓冲区，以便可以正确读取下一个输出
         self._process.stdout._buffer.clear()  # pyright: ignore[reportAttributeAccessIssue]
         self._process.stderr._buffer.clear()  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -114,7 +114,7 @@ class _BashSession:
 
 
 class Bash(BaseTool):
-    """A tool for executing bash commands"""
+    """用于执行 bash 命令的工具"""
 
     name: str = "bash"
     description: str = _BASH_DESCRIPTION
@@ -123,7 +123,7 @@ class Bash(BaseTool):
         "properties": {
             "command": {
                 "type": "string",
-                "description": "The bash command to execute. Can be empty to view additional logs when previous exit code is `-1`. Can be `ctrl+c` to interrupt the currently running process.",
+                "description": "要执行的 bash 命令。当先前的退出代码为 `-1` 时可以为空以查看其他日志。可以是 `ctrl+c` 来中断当前正在运行的进程。",
             },
         },
         "required": ["command"],

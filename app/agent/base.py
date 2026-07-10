@@ -11,44 +11,44 @@ from app.schema import ROLE_TYPE, AgentState, Memory, Message
 
 
 class BaseAgent(BaseModel, ABC):
-    """Abstract base class for managing agent state and execution.
+    """用于管理 agent 状态和执行的抽象基类。
 
-    Provides foundational functionality for state transitions, memory management,
-    and a step-based execution loop. Subclasses must implement the `step` method.
+    提供状态转换、内存管理和基于步骤的执行循环的基础功能。
+    子类必须实现 `step` 方法。
     """
 
-    # Core attributes
-    name: str = Field(..., description="Unique name of the agent")
-    description: Optional[str] = Field(None, description="Optional agent description")
+    # 核心属性
+    name: str = Field(..., description="agent 的唯一名称")
+    description: Optional[str] = Field(None, description="可选的 agent 描述")
 
-    # Prompts
+    # 提示词
     system_prompt: Optional[str] = Field(
-        None, description="System-level instruction prompt"
+        None, description="系统级指令提示词"
     )
     next_step_prompt: Optional[str] = Field(
-        None, description="Prompt for determining next action"
+        None, description="用于确定下一步行动的提示词"
     )
 
-    # Dependencies
-    llm: LLM = Field(default_factory=LLM, description="Language model instance")
-    memory: Memory = Field(default_factory=Memory, description="Agent's memory store")
+    # 依赖项
+    llm: LLM = Field(default_factory=LLM, description="语言模型实例")
+    memory: Memory = Field(default_factory=Memory, description="agent 的内存存储")
     state: AgentState = Field(
-        default=AgentState.IDLE, description="Current agent state"
+        default=AgentState.IDLE, description="当前 agent 状态"
     )
 
-    # Execution control
-    max_steps: int = Field(default=10, description="Maximum steps before termination")
-    current_step: int = Field(default=0, description="Current step in execution")
+    # 执行控制
+    max_steps: int = Field(default=10, description="终止前的最大步数")
+    current_step: int = Field(default=0, description="执行中的当前步数")
 
     duplicate_threshold: int = 2
 
     class Config:
         arbitrary_types_allowed = True
-        extra = "allow"  # Allow extra fields for flexibility in subclasses
+        extra = "allow"  # 允许额外字段，以便在子类中灵活使用
 
     @model_validator(mode="after")
     def initialize_agent(self) -> "BaseAgent":
-        """Initialize agent with default settings if not provided."""
+        """如果未提供，则使用默认设置初始化 agent。"""
         if self.llm is None or not isinstance(self.llm, LLM):
             self.llm = LLM(config_name=self.name.lower())
         if not isinstance(self.memory, Memory):
@@ -57,16 +57,16 @@ class BaseAgent(BaseModel, ABC):
 
     @asynccontextmanager
     async def state_context(self, new_state: AgentState):
-        """Context manager for safe agent state transitions.
+        """用于安全 agent 状态转换的上下文管理器。
 
         Args:
-            new_state: The state to transition to during the context.
+            new_state: 在上下文中要转换到的状态。
 
         Yields:
-            None: Allows execution within the new state.
+            None: 允许在新状态下执行。
 
         Raises:
-            ValueError: If the new_state is invalid.
+            ValueError: 如果 new_state 无效。
         """
         if not isinstance(new_state, AgentState):
             raise ValueError(f"Invalid state: {new_state}")
@@ -76,10 +76,10 @@ class BaseAgent(BaseModel, ABC):
         try:
             yield
         except Exception as e:
-            self.state = AgentState.ERROR  # Transition to ERROR on failure
+            self.state = AgentState.ERROR  # 失败时转换到 ERROR 状态
             raise e
         finally:
-            self.state = previous_state  # Revert to previous state
+            self.state = previous_state  # 恢复到之前的状态
 
     def update_memory(
         self,
@@ -88,16 +88,16 @@ class BaseAgent(BaseModel, ABC):
         base64_image: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Add a message to the agent's memory.
+        """向 agent 的内存添加一条消息。
 
         Args:
-            role: The role of the message sender (user, system, assistant, tool).
-            content: The message content.
-            base64_image: Optional base64 encoded image.
-            **kwargs: Additional arguments (e.g., tool_call_id for tool messages).
+            role: 消息发送者的角色（user, system, assistant, tool）。
+            content: 消息内容。
+            base64_image: 可选的 base64 编码图像。
+            **kwargs: 额外参数（例如，工具消息的 tool_call_id）。
 
         Raises:
-            ValueError: If the role is unsupported.
+            ValueError: 如果角色不受支持。
         """
         message_map = {
             "user": Message.user_message,
@@ -109,21 +109,21 @@ class BaseAgent(BaseModel, ABC):
         if role not in message_map:
             raise ValueError(f"Unsupported message role: {role}")
 
-        # Create message with appropriate parameters based on role
+        # 根据角色创建带有适当参数的消息
         kwargs = {"base64_image": base64_image, **(kwargs if role == "tool" else {})}
         self.memory.add_message(message_map[role](content, **kwargs))
 
     async def run(self, request: Optional[str] = None) -> str:
-        """Execute the agent's main loop asynchronously.
+        """异步执行 agent 的主循环。
 
         Args:
-            request: Optional initial user request to process.
+            request: 可选的初始用户请求。
 
         Returns:
-            A string summarizing the execution results.
+            总结执行结果的字符串。
 
         Raises:
-            RuntimeError: If the agent is not in IDLE state at start.
+            RuntimeError: 如果 agent 在开始时不在 IDLE 状态。
         """
         if self.state != AgentState.IDLE:
             raise RuntimeError(f"Cannot run agent from state: {self.state}")
@@ -140,7 +140,7 @@ class BaseAgent(BaseModel, ABC):
                 logger.info(f"Executing step {self.current_step}/{self.max_steps}")
                 step_result = await self.step()
 
-                # Check for stuck state
+                # 检查是否卡住
                 if self.is_stuck():
                     self.handle_stuck_state()
 
@@ -155,20 +155,20 @@ class BaseAgent(BaseModel, ABC):
 
     @abstractmethod
     async def step(self) -> str:
-        """Execute a single step in the agent's workflow.
+        """执行 agent 工作流中的单个步骤。
 
-        Must be implemented by subclasses to define specific behavior.
+        必须由子类实现以定义特定行为。
         """
 
     def handle_stuck_state(self):
-        """Handle stuck state by adding a prompt to change strategy"""
+        """通过添加提示来改变策略，处理卡住状态"""
         stuck_prompt = "\
-        Observed duplicate responses. Consider new strategies and avoid repeating ineffective paths already attempted."
+        观察到重复响应。请考虑新策略，避免重复已经尝试过的无效路径。"
         self.next_step_prompt = f"{stuck_prompt}\n{self.next_step_prompt}"
         logger.warning(f"Agent detected stuck state. Added prompt: {stuck_prompt}")
 
     def is_stuck(self) -> bool:
-        """Check if the agent is stuck in a loop by detecting duplicate content"""
+        """通过检测重复内容来检查 agent 是否卡在循环中"""
         if len(self.memory.messages) < 2:
             return False
 
@@ -176,7 +176,7 @@ class BaseAgent(BaseModel, ABC):
         if not last_message.content:
             return False
 
-        # Count identical content occurrences
+        # 统计相同内容的出现次数
         duplicate_count = sum(
             1
             for msg in reversed(self.memory.messages[:-1])
@@ -187,10 +187,10 @@ class BaseAgent(BaseModel, ABC):
 
     @property
     def messages(self) -> List[Message]:
-        """Retrieve a list of messages from the agent's memory."""
+        """从 agent 的内存中检索消息列表。"""
         return self.memory.messages
 
     @messages.setter
     def messages(self, value: List[Message]):
-        """Set the list of messages in the agent's memory."""
+        """设置 agent 内存中的消息列表。"""
         self.memory.messages = value

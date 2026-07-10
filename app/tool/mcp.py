@@ -12,12 +12,12 @@ from app.tool.tool_collection import ToolCollection
 
 
 class MCPClientTool(BaseTool):
-    """Represents a tool proxy that can be called on the MCP server from the client side."""
+    """表示可以通过 MCP 服务器从客户端调用的工具代理。"""
 
     session: Optional[ClientSession] = None
 
     async def execute(self, **kwargs) -> ToolResult:
-        """Execute the tool by making a remote call to the MCP server."""
+        """通过向 MCP 服务器发起远程调用来执行工具。"""
         if not self.session:
             return ToolResult(error="Not connected to MCP server")
 
@@ -33,7 +33,7 @@ class MCPClientTool(BaseTool):
 
 class MCPClients(ToolCollection):
     """
-    A collection of tools that connects to an MCP server and manages available tools through the Model Context Protocol.
+    一个连接到 MCP 服务器并通过模型上下文协议管理可用工具的工具集合。
     """
 
     session: Optional[ClientSession] = None
@@ -46,7 +46,7 @@ class MCPClients(ToolCollection):
         self.exit_stack = AsyncExitStack()
 
     async def connect_sse(self, server_url: str) -> None:
-        """Connect to an MCP server using SSE transport."""
+        """使用 SSE 传输连接到 MCP 服务器。"""
         if not server_url:
             raise ValueError("Server URL is required.")
         if self.session:
@@ -61,7 +61,7 @@ class MCPClients(ToolCollection):
         await self._initialize_and_list_tools()
 
     async def connect_stdio(self, command: str, args: List[str]) -> None:
-        """Connect to an MCP server using stdio transport."""
+        """使用 stdio 传输连接到 MCP 服务器。"""
         if not command:
             raise ValueError("Server command is required.")
         if self.session:
@@ -79,7 +79,7 @@ class MCPClients(ToolCollection):
         await self._initialize_and_list_tools()
 
     async def _initialize_and_list_tools(self) -> None:
-        """Initialize session and populate tool map."""
+        """初始化会话并填充工具映射。"""
         if not self.session:
             raise RuntimeError("Session not initialized.")
 
@@ -106,7 +106,7 @@ class MCPClients(ToolCollection):
         )
 
     async def disconnect(self) -> None:
-        """Disconnect from the MCP server and clean up resources."""
+        """断开与 MCP 服务器的连接并清理资源。"""
         if self.session and self.exit_stack:
             await self.exit_stack.aclose()
             self.session = None

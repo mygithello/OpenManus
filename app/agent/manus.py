@@ -13,11 +13,11 @@ from app.tool.str_replace_editor import StrReplaceEditor
 
 
 class Manus(ToolCallAgent):
-    """A versatile general-purpose agent."""
+    """一个通用的多功能 agent。"""
 
     name: str = "Manus"
     description: str = (
-        "A versatile agent that can solve various tasks using multiple tools"
+        "一个多功能的 agent，可以使用多种工具解决各种任务"
     )
 
     system_prompt: str = SYSTEM_PROMPT.format(directory=config.workspace_root)
@@ -26,7 +26,7 @@ class Manus(ToolCallAgent):
     max_observe: int = 10000
     max_steps: int = 20
 
-    # Add general-purpose tools to the tool collection
+    # 添加通用工具到工具集合
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             PythonExecute(), BrowserUseTool(), StrReplaceEditor(), Terminate()
@@ -43,7 +43,7 @@ class Manus(ToolCallAgent):
         return self
 
     async def think(self) -> bool:
-        """Process current state and decide next actions with appropriate context."""
+        """处理当前状态，并在适当的上下文中决定下一步行动。"""
         original_prompt = self.next_step_prompt
         recent_messages = self.memory.messages[-3:] if self.memory.messages else []
         browser_in_use = any(
@@ -60,12 +60,12 @@ class Manus(ToolCallAgent):
 
         result = await super().think()
 
-        # Restore original prompt
+        # 恢复原始提示词
         self.next_step_prompt = original_prompt
 
         return result
 
     async def cleanup(self):
-        """Clean up Manus agent resources."""
+        """清理 Manus agent 资源。"""
         if self.browser_context_helper:
             await self.browser_context_helper.cleanup_browser()

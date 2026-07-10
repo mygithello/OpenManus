@@ -14,7 +14,7 @@ from app.tool import PlanningTool
 
 
 class PlanStepStatus(str, Enum):
-    """Enum class defining possible statuses of a plan step"""
+    """定义计划步骤可能状态的枚举类"""
 
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
@@ -23,17 +23,17 @@ class PlanStepStatus(str, Enum):
 
     @classmethod
     def get_all_statuses(cls) -> list[str]:
-        """Return a list of all possible step status values"""
+        """返回所有可能的步骤状态值列表"""
         return [status.value for status in cls]
 
     @classmethod
     def get_active_statuses(cls) -> list[str]:
-        """Return a list of values representing active statuses (not started or in progress)"""
+        """返回表示活动状态的值列表（未开始或进行中）"""
         return [cls.NOT_STARTED.value, cls.IN_PROGRESS.value]
 
     @classmethod
     def get_status_marks(cls) -> Dict[str, str]:
-        """Return a mapping of statuses to their marker symbols"""
+        """返回状态到标记符号的映射"""
         return {
             cls.COMPLETED.value: "[✓]",
             cls.IN_PROGRESS.value: "[→]",
@@ -43,7 +43,7 @@ class PlanStepStatus(str, Enum):
 
 
 class PlanningFlow(BaseFlow):
-    """A flow that manages planning and execution of tasks using agents."""
+    """使用 agent 管理任务规划和执行的流程。"""
 
     llm: LLM = Field(default_factory=lambda: LLM())
     planning_tool: PlanningTool = Field(default_factory=PlanningTool)

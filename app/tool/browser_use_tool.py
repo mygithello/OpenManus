@@ -12,25 +12,26 @@ from pydantic_core.core_schema import ValidationInfo
 
 from app.config import config
 from app.llm import LLM
+from app.logger import logger
 from app.tool.base import BaseTool, ToolResult
 from app.tool.web_search import WebSearch
 
 
 _BROWSER_DESCRIPTION = """\
-A powerful browser automation tool that allows interaction with web pages through various actions.
-* This tool provides commands for controlling a browser session, navigating web pages, and extracting information
-* It maintains state across calls, keeping the browser session alive until explicitly closed
-* Use this when you need to browse websites, fill forms, click buttons, extract content, or perform web searches
-* Each action requires specific parameters as defined in the tool's dependencies
+一个强大的浏览器自动化工具，允许通过各种操作与网页交互。
+* 此工具提供用于控制浏览器会话、导航网页和提取信息的命令
+* 它在调用之间保持状态，保持浏览器会话活动直到显式关闭
+* 当你需要浏览网站、填写表单、点击按钮、提取内容或执行网页搜索时使用此工具
+* 每个操作都需要工具依赖项中定义的特定参数
 
-Key capabilities include:
-* Navigation: Go to specific URLs, go back, search the web, or refresh pages
-* Interaction: Click elements, input text, select from dropdowns, send keyboard commands
-* Scrolling: Scroll up/down by pixel amount or scroll to specific text
-* Content extraction: Extract and analyze content from web pages based on specific goals
-* Tab management: Switch between tabs, open new tabs, or close tabs
+主要功能包括：
+* 导航：转到特定 URL、返回、搜索网页或刷新页面
+* 交互：点击元素、输入文本、从下拉菜单中选择、发送键盘命令
+* 滚动：按像素量向上/向下滚动或滚动到特定文本
+* 内容提取：根据特定目标从网页中提取和分析内容
+* 标签页管理：在标签页之间切换、打开新标签页或关闭标签页
 
-Note: When using element indices, refer to the numbered elements shown in the current browser state.
+注意：使用元素索引时，请参考当前浏览器状态中显示的元素编号。
 """
 
 Context = TypeVar("Context")
@@ -62,43 +63,43 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     "open_tab",
                     "close_tab",
                 ],
-                "description": "The browser action to perform",
+                "description": "要执行的浏览器操作",
             },
             "url": {
                 "type": "string",
-                "description": "URL for 'go_to_url' or 'open_tab' actions",
+                "description": "用于 'go_to_url' 或 'open_tab' 操作的 URL",
             },
             "index": {
                 "type": "integer",
-                "description": "Element index for 'click_element', 'input_text', 'get_dropdown_options', or 'select_dropdown_option' actions",
+                "description": "用于 'click_element'、'input_text'、'get_dropdown_options' 或 'select_dropdown_option' 操作的元素索引",
             },
             "text": {
                 "type": "string",
-                "description": "Text for 'input_text', 'scroll_to_text', or 'select_dropdown_option' actions",
+                "description": "用于 'input_text'、'scroll_to_text' 或 'select_dropdown_option' 操作的文本",
             },
             "scroll_amount": {
                 "type": "integer",
-                "description": "Pixels to scroll (positive for down, negative for up) for 'scroll_down' or 'scroll_up' actions",
+                "description": "用于 'scroll_down' 或 'scroll_up' 操作的滚动像素数（正数向下，负数向上）",
             },
             "tab_id": {
                 "type": "integer",
-                "description": "Tab ID for 'switch_tab' action",
+                "description": "用于 'switch_tab' 操作的标签页 ID",
             },
             "query": {
                 "type": "string",
-                "description": "Search query for 'web_search' action",
+                "description": "用于 'web_search' 操作的搜索查询",
             },
             "goal": {
                 "type": "string",
-                "description": "Extraction goal for 'extract_content' action",
+                "description": "用于 'extract_content' 操作的提取目标",
             },
             "keys": {
                 "type": "string",
-                "description": "Keys to send for 'send_keys' action",
+                "description": "用于 'send_keys' 操作要发送的按键",
             },
             "seconds": {
                 "type": "integer",
-                "description": "Seconds to wait for 'wait' action",
+                "description": "用于 'wait' 操作要等待的秒数",
             },
         },
         "required": ["action"],
@@ -139,14 +140,14 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         return v
 
     async def _ensure_browser_initialized(self) -> BrowserContext:
-        """Ensure browser and context are initialized."""
+        """确保浏览器和上下文已初始化。"""
         if self.browser is None:
             browser_config_kwargs = {"headless": False, "disable_security": True}
 
             if config.browser_config:
                 from browser_use.browser.browser import ProxySettings
 
-                # handle proxy settings.
+                # 处理代理设置。
                 if config.browser_config.proxy and config.browser_config.proxy.server:
                     browser_config_kwargs["proxy"] = ProxySettings(
                         server=config.browser_config.proxy.server,
@@ -174,7 +175,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         if self.context is None:
             context_config = BrowserContextConfig()
 
-            # if there is context config in the config, use it.
+            # 如果配置中有上下文配置，则使用它。
             if (
                 config.browser_config
                 and hasattr(config.browser_config, "new_context_config")
@@ -202,34 +203,34 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         **kwargs,
     ) -> ToolResult:
         """
-        Execute a specified browser action.
+        执行指定的浏览器操作。
 
         Args:
-            action: The browser action to perform
-            url: URL for navigation or new tab
-            index: Element index for click or input actions
-            text: Text for input action or search query
-            scroll_amount: Pixels to scroll for scroll action
-            tab_id: Tab ID for switch_tab action
-            query: Search query for Google search
-            goal: Extraction goal for content extraction
-            keys: Keys to send for keyboard actions
-            seconds: Seconds to wait
-            **kwargs: Additional arguments
+            action: 要执行的浏览器操作
+            url: 用于导航或新标签页的 URL
+            index: 用于点击或输入操作的元素索引
+            text: 用于输入操作或搜索查询的文本
+            scroll_amount: 用于滚动操作的滚动像素数
+            tab_id: 用于 switch_tab 操作的标签页 ID
+            query: 用于 Google 搜索的搜索查询
+            goal: 用于内容提取的提取目标
+            keys: 用于键盘操作要发送的按键
+            seconds: 要等待的秒数
+            **kwargs: 其他参数
 
         Returns:
-            ToolResult with the action's output or error
+            包含操作输出或错误的 ToolResult
         """
         async with self.lock:
             try:
                 context = await self._ensure_browser_initialized()
 
-                # Get max content length from config
+                # 从配置中获取最大内容长度
                 max_content_length = getattr(
                     config.browser_config, "max_content_length", 2000
                 )
 
-                # Navigation actions
+                # 导航操作
                 if action == "go_to_url":
                     if not url:
                         return ToolResult(
@@ -253,11 +254,11 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         return ToolResult(
                             error="Query is required for 'web_search' action"
                         )
-                    # Execute the web search and return results directly without browser navigation
+                    # 执行网页搜索并直接返回结果，无需浏览器导航
                     search_response = await self.web_search_tool.execute(
                         query=query, fetch_content=True, num_results=1
                     )
-                    # Navigate to the first search result
+                    # 导航到第一个搜索结果
                     first_search_result = search_response.results[0]
                     url_to_navigate = first_search_result.url
 
@@ -267,7 +268,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
 
                     return search_response
 
-                # Element interaction actions
+                # 元素交互操作
                 elif action == "click_element":
                     if index is None:
                         return ToolResult(
@@ -371,7 +372,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         output=f"Selected option '{text}' from dropdown at index {index}"
                     )
 
-                # Content extraction actions
+                # 内容提取操作
                 elif action == "extract_content":
                     if not goal:
                         return ToolResult(
@@ -392,7 +393,7 @@ Page content:
 """
                     messages = [{"role": "system", "content": prompt}]
 
-                    # Define extraction function schema
+                    # 定义提取函数模式
                     extraction_function = {
                         "type": "function",
                         "function": {
@@ -427,7 +428,7 @@ Page content:
                         },
                     }
 
-                    # Use LLM to extract content with required function calling
+                    # 使用 LLM 通过必需的函数调用来提取内容
                     response = await self.llm.ask_tool(
                         messages,
                         tools=[extraction_function],
@@ -443,7 +444,7 @@ Page content:
 
                     return ToolResult(output="No content was extracted from the page.")
 
-                # Tab management actions
+                # 标签页管理操作
                 elif action == "switch_tab":
                     if tab_id is None:
                         return ToolResult(
@@ -464,7 +465,7 @@ Page content:
                     await context.close_current_tab()
                     return ToolResult(output="Closed current tab")
 
-                # Utility actions
+                # 实用操作
                 elif action == "wait":
                     seconds_to_wait = seconds if seconds is not None else 3
                     await asyncio.sleep(seconds_to_wait)
@@ -480,25 +481,25 @@ Page content:
         self, context: Optional[BrowserContext] = None
     ) -> ToolResult:
         """
-        Get the current browser state as a ToolResult.
-        If context is not provided, uses self.context.
+        获取当前浏览器状态作为 ToolResult。
+        如果未提供 context，则使用 self.context。
         """
         try:
-            # Use provided context or fall back to self.context
+            # 使用提供的 context 或回退到 self.context
             ctx = context or self.context
             if not ctx:
                 return ToolResult(error="Browser context not initialized")
 
             state = await ctx.get_state()
 
-            # Create a viewport_info dictionary if it doesn't exist
+            # 如果不存在，创建 viewport_info 字典
             viewport_height = 0
             if hasattr(state, "viewport_info") and state.viewport_info:
                 viewport_height = state.viewport_info.height
             elif hasattr(ctx, "config") and hasattr(ctx.config, "browser_window_size"):
                 viewport_height = ctx.config.browser_window_size.get("height", 0)
 
-            # Take a screenshot for the state
+            # 为状态拍摄截图
             page = await ctx.get_current_page()
 
             await page.bring_to_front()
@@ -509,18 +510,35 @@ Page content:
             )
 
             screenshot = base64.b64encode(screenshot).decode("utf-8")
+            screenshot_size_kb = len(screenshot) * 3 / 4 / 1024  # 估算图片大小（KB）
 
-            # Build the state info with all required fields
+            # 获取可交互元素信息
+            interactive_elements_str = (
+                state.element_tree.clickable_elements_to_string()
+                if state.element_tree
+                else ""
+            )
+            element_count = interactive_elements_str.count("[") if interactive_elements_str else 0
+
+            # 调试信息
+            logger.info(f"🌐 Browser state captured: URL={state.url}, Title={state.title}")
+            logger.info(f"📸 Screenshot size: {screenshot_size_kb:.2f} KB (base64)")
+            logger.info(f"🔍 Interactive elements detected: {element_count}")
+            if element_count == 0:
+                logger.warning(f"⚠️ No interactive elements found - page may be empty or not loaded")
+            if interactive_elements_str:
+                # 显示前几个元素作为示例
+                lines = interactive_elements_str.split("\n")[:5]
+                preview = "\n".join(lines)
+                logger.debug(f"🔍 Elements preview (first 5):\n{preview}")
+
+            # 构建包含所有必需字段的状态信息
             state_info = {
                 "url": state.url,
                 "title": state.title,
                 "tabs": [tab.model_dump() for tab in state.tabs],
                 "help": "[0], [1], [2], etc., represent clickable indices corresponding to the elements listed. Clicking on these indices will navigate to or interact with the respective content behind them.",
-                "interactive_elements": (
-                    state.element_tree.clickable_elements_to_string()
-                    if state.element_tree
-                    else ""
-                ),
+                "interactive_elements": interactive_elements_str,
                 "scroll_info": {
                     "pixels_above": getattr(state, "pixels_above", 0),
                     "pixels_below": getattr(state, "pixels_below", 0),
@@ -539,7 +557,7 @@ Page content:
             return ToolResult(error=f"Failed to get browser state: {str(e)}")
 
     async def cleanup(self):
-        """Clean up browser resources."""
+        """清理浏览器资源。"""
         async with self.lock:
             if self.context is not None:
                 await self.context.close()
@@ -550,7 +568,7 @@ Page content:
                 self.browser = None
 
     def __del__(self):
-        """Ensure cleanup when object is destroyed."""
+        """确保在对象销毁时进行清理。"""
         if self.browser is not None or self.context is not None:
             try:
                 asyncio.run(self.cleanup())
@@ -561,7 +579,7 @@ Page content:
 
     @classmethod
     def create_with_context(cls, context: Context) -> "BrowserUseTool[Context]":
-        """Factory method to create a BrowserUseTool with a specific context."""
+        """创建具有特定上下文的 BrowserUseTool 的工厂方法。"""
         tool = cls()
         tool.tool_context = context
         return tool

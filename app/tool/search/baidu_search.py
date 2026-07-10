@@ -10,22 +10,22 @@ class BaiduSearchEngine(WebSearchEngine):
         self, query: str, num_results: int = 10, *args, **kwargs
     ) -> List[SearchItem]:
         """
-        Baidu search engine.
+        百度搜索引擎。
 
-        Returns results formatted according to SearchItem model.
+        返回根据 SearchItem 模型格式化的结果。
         """
         raw_results = search(query, num_results=num_results)
 
-        # Convert raw results to SearchItem format
+        # 将原始结果转换为 SearchItem 格式
         results = []
         for i, item in enumerate(raw_results):
             if isinstance(item, str):
-                # If it's just a URL
+                # 如果只是 URL
                 results.append(
                     SearchItem(title=f"Baidu Result {i+1}", url=item, description=None)
                 )
             elif isinstance(item, dict):
-                # If it's a dictionary with details
+                # 如果是包含详细信息的字典
                 results.append(
                     SearchItem(
                         title=item.get("title", f"Baidu Result {i+1}"),
@@ -34,7 +34,7 @@ class BaiduSearchEngine(WebSearchEngine):
                     )
                 )
             else:
-                # Try to get attributes directly
+                # 尝试直接获取属性
                 try:
                     results.append(
                         SearchItem(
@@ -44,7 +44,7 @@ class BaiduSearchEngine(WebSearchEngine):
                         )
                     )
                 except Exception:
-                    # Fallback to a basic result
+                    # 回退到基本结果
                     results.append(
                         SearchItem(
                             title=f"Baidu Result {i+1}", url=str(item), description=None

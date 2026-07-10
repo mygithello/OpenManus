@@ -39,21 +39,21 @@ class BingSearchEngine(WebSearchEngine):
     session: Optional[requests.Session] = None
 
     def __init__(self, **data):
-        """Initialize the BingSearch tool with a requests session."""
+        """使用 requests 会话初始化 BingSearch 工具。"""
         super().__init__(**data)
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
 
     def _search_sync(self, query: str, num_results: int = 10) -> List[SearchItem]:
         """
-        Synchronous Bing search implementation to retrieve search results.
+        同步的 Bing 搜索实现，用于检索搜索结果。
 
         Args:
-            query (str): The search query to submit to Bing.
-            num_results (int, optional): Maximum number of results to return. Defaults to 10.
+            query (str): 要提交给 Bing 的搜索查询。
+            num_results (int, optional): 要返回的最大结果数。默认为 10。
 
         Returns:
-            List[SearchItem]: A list of search items with title, URL, and description.
+            List[SearchItem]: 包含标题、URL 和描述的搜索结果项列表。
         """
         if not query:
             return []
@@ -78,10 +78,10 @@ class BingSearchEngine(WebSearchEngine):
         self, url: str, rank_start: int = 0, first: int = 1
     ) -> Tuple[List[SearchItem], str]:
         """
-        Parse Bing search result HTML to extract search results and the next page URL.
+        解析 Bing 搜索结果 HTML 以提取搜索结果和下一页 URL。
 
         Returns:
-            tuple: (List of SearchItem objects, next page URL or None)
+            tuple: (SearchItem 对象列表, 下一页 URL 或 None)
         """
         try:
             res = self.session.get(url=url)
@@ -112,7 +112,7 @@ class BingSearchEngine(WebSearchEngine):
 
                     rank_start += 1
 
-                    # Create a SearchItem object
+                    # 创建 SearchItem 对象
                     list_data.append(
                         SearchItem(
                             title=title or f"Bing Result {rank_start}",
@@ -137,8 +137,8 @@ class BingSearchEngine(WebSearchEngine):
         self, query: str, num_results: int = 10, *args, **kwargs
     ) -> List[SearchItem]:
         """
-        Bing search engine.
+        Bing 搜索引擎。
 
-        Returns results formatted according to SearchItem model.
+        返回根据 SearchItem 模型格式化的结果。
         """
         return self._search_sync(query, num_results=num_results)

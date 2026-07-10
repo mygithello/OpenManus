@@ -43,13 +43,13 @@ MULTIMODAL_MODELS = [
 
 
 class TokenCounter:
-    # Token constants
+    # Token 常量
     BASE_MESSAGE_TOKENS = 4
     FORMAT_TOKENS = 2
     LOW_DETAIL_IMAGE_TOKENS = 85
     HIGH_DETAIL_TILE_TOKENS = 170
 
-    # Image processing constants
+    # 图像处理常量
     MAX_SIZE = 2048
     HIGH_DETAIL_TARGET_SHORT_SIDE = 768
     TILE_SIZE = 512
@@ -74,50 +74,50 @@ class TokenCounter:
         """
         detail = image_item.get("detail", "medium")
 
-        # For low detail, always return fixed token count
+        # 对于低细节，始终返回固定 token 数
         if detail == "low":
             return self.LOW_DETAIL_IMAGE_TOKENS
 
-        # For medium detail (default in OpenAI), use high detail calculation
-        # OpenAI doesn't specify a separate calculation for medium
+        # 对于中等细节（OpenAI 中的默认值），使用高细节计算
+        # OpenAI 没有为中等细节指定单独的计算方法
 
-        # For high detail, calculate based on dimensions if available
+        # 对于高细节，如果可用，则基于尺寸计算
         if detail == "high" or detail == "medium":
-            # If dimensions are provided in the image_item
+            # 如果在 image_item 中提供了尺寸
             if "dimensions" in image_item:
                 width, height = image_item["dimensions"]
                 return self._calculate_high_detail_tokens(width, height)
 
-        # Default values when dimensions aren't available or detail level is unknown
+        # 当尺寸信息不可用或细节级别未知时的默认值
         if detail == "high":
-            # Default to a 1024x1024 image calculation for high detail
+            # 对于高细节，默认为 1024x1024 图像计算
             return self._calculate_high_detail_tokens(1024, 1024)  # 765 tokens
         elif detail == "medium":
-            # Default to a medium-sized image for medium detail
+            # 对于中等细节，默认为中等尺寸图像
             return 1024  # This matches the original default
         else:
-            # For unknown detail levels, use medium as default
+            # 对于未知的细节级别，使用中等作为默认值
             return 1024
 
     def _calculate_high_detail_tokens(self, width: int, height: int) -> int:
         """Calculate tokens for high detail images based on dimensions"""
-        # Step 1: Scale to fit in MAX_SIZE x MAX_SIZE square
+        # 步骤 1：缩放到适合 MAX_SIZE x MAX_SIZE 正方形
         if width > self.MAX_SIZE or height > self.MAX_SIZE:
             scale = self.MAX_SIZE / max(width, height)
             width = int(width * scale)
             height = int(height * scale)
 
-        # Step 2: Scale so shortest side is HIGH_DETAIL_TARGET_SHORT_SIDE
+        # 步骤 2：缩放使最短边为 HIGH_DETAIL_TARGET_SHORT_SIDE
         scale = self.HIGH_DETAIL_TARGET_SHORT_SIDE / min(width, height)
         scaled_width = int(width * scale)
         scaled_height = int(height * scale)
 
-        # Step 3: Count number of 512px tiles
+        # 步骤 3：计算 512px 瓦片数量
         tiles_x = math.ceil(scaled_width / self.TILE_SIZE)
         tiles_y = math.ceil(scaled_height / self.TILE_SIZE)
         total_tiles = tiles_x * tiles_y
 
-        # Step 4: Calculate final token count
+        # 步骤 4：计算最终 token 数
         return (
             total_tiles * self.HIGH_DETAIL_TILE_TOKENS
         ) + self.LOW_DETAIL_IMAGE_TOKENS
@@ -153,23 +153,23 @@ class TokenCounter:
 
     def count_message_tokens(self, messages: List[dict]) -> int:
         """Calculate the total number of tokens in a message list"""
-        total_tokens = self.FORMAT_TOKENS  # Base format tokens
+        total_tokens = self.FORMAT_TOKENS  # 基础格式 tokens
 
         for message in messages:
-            tokens = self.BASE_MESSAGE_TOKENS  # Base tokens per message
+            tokens = self.BASE_MESSAGE_TOKENS  # 每条消息的基础 tokens
 
-            # Add role tokens
+            # 添加角色 tokens
             tokens += self.count_text(message.get("role", ""))
 
-            # Add content tokens
+            # 添加内容 tokens
             if "content" in message:
                 tokens += self.count_content(message["content"])
 
-            # Add tool calls tokens
+            # 添加工具调用 tokens
             if "tool_calls" in message:
                 tokens += self.count_tool_calls(message["tool_calls"])
 
-            # Add name and tool_call_id tokens
+            # 添加 name 和 tool_call_id tokens
             tokens += self.count_text(message.get("name", ""))
             tokens += self.count_text(message.get("tool_call_id", ""))
 
@@ -193,7 +193,7 @@ class LLM:
     def __init__(
         self, config_name: str = "default", llm_config: Optional[LLMSettings] = None
     ):
-        if not hasattr(self, "client"):  # Only initialize if not already initialized
+        if not hasattr(self, "client"):  # 仅在尚未初始化时初始化
             llm_config = llm_config or config.llm
             llm_config = llm_config.get(config_name, llm_config["default"])
             self.model = llm_config.model
@@ -204,7 +204,7 @@ class LLM:
             self.api_version = llm_config.api_version
             self.base_url = llm_config.base_url
 
-            # Add token counting related attributes
+            # 添加 token 计数相关属性
             self.total_input_tokens = 0
             self.total_completion_tokens = 0
             self.max_input_tokens = (
@@ -213,11 +213,11 @@ class LLM:
                 else None
             )
 
-            # Initialize tokenizer
+            # 初始化 tokenizer
             try:
                 self.tokenizer = tiktoken.encoding_for_model(self.model)
             except KeyError:
-                # If the model is not in tiktoken's presets, use cl100k_base as default
+                # 如果模型不在 tiktoken 的预设中，使用 cl100k_base 作为默认值
                 self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
             if self.api_type == "azure":
@@ -244,7 +244,7 @@ class LLM:
 
     def update_token_count(self, input_tokens: int, completion_tokens: int = 0) -> None:
         """Update token counts"""
-        # Only track tokens if max_input_tokens is set
+        # 仅在设置了 max_input_tokens 时跟踪 tokens
         self.total_input_tokens += input_tokens
         self.total_completion_tokens += completion_tokens
         logger.info(
@@ -257,7 +257,7 @@ class LLM:
         """Check if token limits are exceeded"""
         if self.max_input_tokens is not None:
             return (self.total_input_tokens + input_tokens) <= self.max_input_tokens
-        # If max_input_tokens is not set, always return True
+        # 如果未设置 max_input_tokens，始终返回 True
         return True
 
     def get_limit_error_message(self, input_tokens: int) -> str:
@@ -391,23 +391,23 @@ class LLM:
             Exception: For unexpected errors
         """
         try:
-            # Check if the model supports images
+            # 检查模型是否支持图像
             supports_images = self.model in MULTIMODAL_MODELS
 
-            # Format system and user messages with image support check
+            # 格式化系统消息和用户消息，检查图像支持
             if system_msgs:
                 system_msgs = self.format_messages(system_msgs, supports_images)
                 messages = system_msgs + self.format_messages(messages, supports_images)
             else:
                 messages = self.format_messages(messages, supports_images)
 
-            # Calculate input token count
+            # 计算输入 token 数
             input_tokens = self.count_message_tokens(messages)
 
-            # Check if token limits are exceeded
+            # 检查是否超过 token 限制
             if not self.check_token_limit(input_tokens):
                 error_message = self.get_limit_error_message(input_tokens)
-                # Raise a special exception that won't be retried
+                # 引发一个不会被重试的特殊异常
                 raise TokenLimitExceeded(error_message)
 
             params = {
@@ -424,7 +424,7 @@ class LLM:
                 )
 
             if not stream:
-                # Non-streaming request
+                # 非流式请求
                 response = await self.client.chat.completions.create(
                     **params, stream=False
                 )
@@ -432,14 +432,14 @@ class LLM:
                 if not response.choices or not response.choices[0].message.content:
                     raise ValueError("Empty or invalid response from LLM")
 
-                # Update token counts
+                # 更新 token 计数
                 self.update_token_count(
                     response.usage.prompt_tokens, response.usage.completion_tokens
                 )
 
                 return response.choices[0].message.content
 
-            # Streaming request, For streaming, update estimated token count before making the request
+            # 流式请求，对于流式，在发出请求前更新估计的 token 计数
             self.update_token_count(input_tokens)
 
             response = await self.client.chat.completions.create(**params, stream=True)
@@ -452,12 +452,12 @@ class LLM:
                 completion_text += chunk_message
                 print(chunk_message, end="", flush=True)
 
-            print()  # Newline after streaming
+            print()  # 流式输出后的换行
             full_response = "".join(collected_messages).strip()
             if not full_response:
                 raise ValueError("Empty response from streaming LLM")
 
-            # estimate completion tokens for streaming response
+            # 估算流式响应的完成 token 数
             completion_tokens = self.count_tokens(completion_text)
             logger.info(
                 f"Estimated completion tokens for streaming response: {completion_tokens}"
@@ -467,7 +467,7 @@ class LLM:
             return full_response
 
         except TokenLimitExceeded:
-            # Re-raise token limit errors without logging
+            # 重新抛出 token 限制错误而不记录日志
             raise
         except ValueError:
             logger.exception(f"Validation error")
@@ -520,26 +520,26 @@ class LLM:
             Exception: For unexpected errors
         """
         try:
-            # For ask_with_images, we always set supports_images to True because
-            # this method should only be called with models that support images
+            # 对于 ask_with_images，我们始终将 supports_images 设置为 True，因为
+            # 此方法只应在支持图像的模型上调用
             if self.model not in MULTIMODAL_MODELS:
                 raise ValueError(
                     f"Model {self.model} does not support images. Use a model from {MULTIMODAL_MODELS}"
                 )
 
-            # Format messages with image support
+            # 使用图像支持格式化消息
             formatted_messages = self.format_messages(messages, supports_images=True)
 
-            # Ensure the last message is from the user to attach images
+            # 确保最后一条消息来自用户以附加图像
             if not formatted_messages or formatted_messages[-1]["role"] != "user":
                 raise ValueError(
                     "The last message must be from the user to attach images"
                 )
 
-            # Process the last user message to include images
+            # 处理最后一条用户消息以包含图像
             last_message = formatted_messages[-1]
 
-            # Convert content to multimodal format if needed
+            # 如果需要，将内容转换为多模态格式
             content = last_message["content"]
             multimodal_content = (
                 [{"type": "text", "text": content}]
@@ -549,7 +549,7 @@ class LLM:
                 else []
             )
 
-            # Add images to content
+            # 向内容添加图像
             for image in images:
                 if isinstance(image, str):
                     multimodal_content.append(
@@ -562,10 +562,10 @@ class LLM:
                 else:
                     raise ValueError(f"Unsupported image format: {image}")
 
-            # Update the message with multimodal content
+            # 使用多模态内容更新消息
             last_message["content"] = multimodal_content
 
-            # Add system messages if provided
+            # 如果提供了系统消息，添加它们
             if system_msgs:
                 all_messages = (
                     self.format_messages(system_msgs, supports_images=True)
@@ -574,19 +574,19 @@ class LLM:
             else:
                 all_messages = formatted_messages
 
-            # Calculate tokens and check limits
+            # 计算 token 数并检查限制
             input_tokens = self.count_message_tokens(all_messages)
             if not self.check_token_limit(input_tokens):
                 raise TokenLimitExceeded(self.get_limit_error_message(input_tokens))
 
-            # Set up API parameters
+            # 设置 API 参数
             params = {
                 "model": self.model,
                 "messages": all_messages,
                 "stream": stream,
             }
 
-            # Add model-specific parameters
+            # 添加模型特定参数
             if self.model in REASONING_MODELS:
                 params["max_completion_tokens"] = self.max_tokens
             else:
@@ -595,7 +595,7 @@ class LLM:
                     temperature if temperature is not None else self.temperature
                 )
 
-            # Handle non-streaming request
+            # 处理非流式请求
             if not stream:
                 response = await self.client.chat.completions.create(**params)
 
@@ -605,7 +605,7 @@ class LLM:
                 self.update_token_count(response.usage.prompt_tokens)
                 return response.choices[0].message.content
 
-            # Handle streaming request
+            # 处理流式请求
             self.update_token_count(input_tokens)
             response = await self.client.chat.completions.create(**params)
 
@@ -615,7 +615,7 @@ class LLM:
                 collected_messages.append(chunk_message)
                 print(chunk_message, end="", flush=True)
 
-            print()  # Newline after streaming
+            print()  # 流式输出后的换行
             full_response = "".join(collected_messages).strip()
 
             if not full_response:
@@ -680,24 +680,24 @@ class LLM:
             Exception: For unexpected errors
         """
         try:
-            # Validate tool_choice
+            # 验证 tool_choice
             if tool_choice not in TOOL_CHOICE_VALUES:
                 raise ValueError(f"Invalid tool_choice: {tool_choice}")
 
-            # Check if the model supports images
+            # 检查模型是否支持图像
             supports_images = self.model in MULTIMODAL_MODELS
 
-            # Format messages
+            # 格式化消息
             if system_msgs:
                 system_msgs = self.format_messages(system_msgs, supports_images)
                 messages = system_msgs + self.format_messages(messages, supports_images)
             else:
                 messages = self.format_messages(messages, supports_images)
 
-            # Calculate input token count
+            # 计算输入 token 数
             input_tokens = self.count_message_tokens(messages)
 
-            # If there are tools, calculate token count for tool descriptions
+            # 如果有工具，计算工具描述的 token 数
             tools_tokens = 0
             if tools:
                 for tool in tools:
@@ -705,19 +705,19 @@ class LLM:
 
             input_tokens += tools_tokens
 
-            # Check if token limits are exceeded
+            # 检查是否超过 token 限制
             if not self.check_token_limit(input_tokens):
                 error_message = self.get_limit_error_message(input_tokens)
-                # Raise a special exception that won't be retried
+                # 引发一个不会被重试的特殊异常
                 raise TokenLimitExceeded(error_message)
 
-            # Validate tools if provided
+            # 如果提供了工具，验证工具
             if tools:
                 for tool in tools:
                     if not isinstance(tool, dict) or "type" not in tool:
                         raise ValueError("Each tool must be a dict with 'type' field")
 
-            # Set up the completion request
+            # 设置完成请求
             params = {
                 "model": self.model,
                 "messages": messages,
@@ -735,18 +735,18 @@ class LLM:
                     temperature if temperature is not None else self.temperature
                 )
 
-            params["stream"] = False  # Always use non-streaming for tool requests
+            params["stream"] = False  # 工具请求始终使用非流式
             response: ChatCompletion = await self.client.chat.completions.create(
                 **params
             )
 
-            # Check if response is valid
+            # 检查响应是否有效
             if not response.choices or not response.choices[0].message:
                 print(response)
                 # raise ValueError("Invalid or empty response from LLM")
                 return None
 
-            # Update token counts
+            # 更新 token 计数
             self.update_token_count(
                 response.usage.prompt_tokens, response.usage.completion_tokens
             )
@@ -754,7 +754,7 @@ class LLM:
             return response.choices[0].message
 
         except TokenLimitExceeded:
-            # Re-raise token limit errors without logging
+            # 重新抛出 token 限制错误而不记录日志
             raise
         except ValueError as ve:
             logger.error(f"Validation error in ask_tool: {ve}")

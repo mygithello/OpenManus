@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 
 from app.agent.manus import Manus
@@ -5,20 +6,29 @@ from app.logger import logger
 
 
 async def main():
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description="运行 Manus agent")
+    parser.add_argument(
+        "--prompt", type=str, required=False, help="输入给 agent 的提示"
+    )
+    args = parser.parse_args()
+
+    # 创建 Manus agent
     agent = Manus()
     try:
-        prompt = input("Enter your prompt: ")
+        # 如果提供了命令行提示，则使用它；否则询问用户输入
+        prompt = args.prompt if args.prompt else input("请输入你的提示: ")
         if not prompt.strip():
-            logger.warning("Empty prompt provided.")
+            logger.warning("提供的提示为空。")
             return
 
-        logger.warning("Processing your request...")
+        logger.warning("正在处理你的请求...")
         await agent.run(prompt)
-        logger.info("Request processing completed.")
+        logger.info("请求处理完成。")
     except KeyboardInterrupt:
-        logger.warning("Operation interrupted.")
+        logger.warning("操作被中断。")
     finally:
-        # Ensure agent resources are cleaned up before exiting
+        # 确保在退出前清理 agent 资源
         await agent.cleanup()
 
 

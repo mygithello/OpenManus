@@ -1,8 +1,8 @@
 """
-Docker Sandbox Module
+Docker 沙箱模块
 
-Provides secure containerized execution environment with resource limits
-and isolation for running untrusted code.
+提供安全的容器化执行环境，具有资源限制和隔离功能，
+用于运行不受信任的代码。
 """
 from app.sandbox.client import (
     BaseSandboxClient,

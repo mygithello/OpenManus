@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 def get_project_root() -> Path:
-    """Get the project root directory"""
+    """获取项目根目录"""
     return Path(__file__).resolve().parent.parent
 
 
@@ -17,108 +17,108 @@ WORKSPACE_ROOT = PROJECT_ROOT / "workspace"
 
 
 class LLMSettings(BaseModel):
-    model: str = Field(..., description="Model name")
-    base_url: str = Field(..., description="API base URL")
-    api_key: str = Field(..., description="API key")
-    max_tokens: int = Field(4096, description="Maximum number of tokens per request")
+    model: str = Field(..., description="模型名称")
+    base_url: str = Field(..., description="API 基础 URL")
+    api_key: str = Field(..., description="API 密钥")
+    max_tokens: int = Field(4096, description="每次请求的最大 token 数")
     max_input_tokens: Optional[int] = Field(
         None,
-        description="Maximum input tokens to use across all requests (None for unlimited)",
+        description="所有请求中使用的最大输入 token 数（None 表示无限制）",
     )
-    temperature: float = Field(1.0, description="Sampling temperature")
-    api_type: str = Field(..., description="Azure, Openai, or Ollama")
-    api_version: str = Field(..., description="Azure Openai version if AzureOpenai")
+    temperature: float = Field(1.0, description="采样温度")
+    api_type: str = Field(..., description="API 类型：Azure、Openai 或 Ollama")
+    api_version: str = Field(..., description="如果使用 AzureOpenai，则为 Azure Openai 版本")
 
 
 class ProxySettings(BaseModel):
-    server: str = Field(None, description="Proxy server address")
-    username: Optional[str] = Field(None, description="Proxy username")
-    password: Optional[str] = Field(None, description="Proxy password")
+    server: str = Field(None, description="代理服务器地址")
+    username: Optional[str] = Field(None, description="代理用户名")
+    password: Optional[str] = Field(None, description="代理密码")
 
 
 class SearchSettings(BaseModel):
-    engine: str = Field(default="Google", description="Search engine the llm to use")
+    engine: str = Field(default="Google", description="LLM 使用的搜索引擎")
     fallback_engines: List[str] = Field(
         default_factory=lambda: ["DuckDuckGo", "Baidu", "Bing"],
-        description="Fallback search engines to try if the primary engine fails",
+        description="主搜索引擎失败时尝试的回退搜索引擎",
     )
     retry_delay: int = Field(
         default=60,
-        description="Seconds to wait before retrying all engines again after they all fail",
+        description="所有搜索引擎都失败后，重新尝试所有引擎前等待的秒数",
     )
     max_retries: int = Field(
         default=3,
-        description="Maximum number of times to retry all engines when all fail",
+        description="所有搜索引擎都失败时的最大重试次数",
     )
     lang: str = Field(
         default="en",
-        description="Language code for search results (e.g., en, zh, fr)",
+        description="搜索结果的语言代码（例如：en, zh, fr）",
     )
     country: str = Field(
         default="us",
-        description="Country code for search results (e.g., us, cn, uk)",
+        description="搜索结果的国家代码（例如：us, cn, uk）",
     )
 
 
 class BrowserSettings(BaseModel):
-    headless: bool = Field(False, description="Whether to run browser in headless mode")
+    headless: bool = Field(False, description="是否以无头模式运行浏览器")
     disable_security: bool = Field(
-        True, description="Disable browser security features"
+        True, description="禁用浏览器安全功能"
     )
     extra_chromium_args: List[str] = Field(
-        default_factory=list, description="Extra arguments to pass to the browser"
+        default_factory=list, description="传递给浏览器的额外参数"
     )
     chrome_instance_path: Optional[str] = Field(
-        None, description="Path to a Chrome instance to use"
+        None, description="要使用的 Chrome 实例路径"
     )
     wss_url: Optional[str] = Field(
-        None, description="Connect to a browser instance via WebSocket"
+        None, description="通过 WebSocket 连接到浏览器实例"
     )
     cdp_url: Optional[str] = Field(
-        None, description="Connect to a browser instance via CDP"
+        None, description="通过 CDP 连接到浏览器实例"
     )
     proxy: Optional[ProxySettings] = Field(
-        None, description="Proxy settings for the browser"
+        None, description="浏览器的代理设置"
     )
     max_content_length: int = Field(
-        2000, description="Maximum length for content retrieval operations"
+        2000, description="内容检索操作的最大长度"
     )
 
 
 class SandboxSettings(BaseModel):
-    """Configuration for the execution sandbox"""
+    """执行沙箱的配置"""
 
-    use_sandbox: bool = Field(False, description="Whether to use the sandbox")
-    image: str = Field("python:3.12-slim", description="Base image")
-    work_dir: str = Field("/workspace", description="Container working directory")
-    memory_limit: str = Field("512m", description="Memory limit")
-    cpu_limit: float = Field(1.0, description="CPU limit")
-    timeout: int = Field(300, description="Default command timeout (seconds)")
+    use_sandbox: bool = Field(False, description="是否使用沙箱")
+    image: str = Field("python:3.12-slim", description="基础镜像")
+    work_dir: str = Field("/workspace", description="容器工作目录")
+    memory_limit: str = Field("512m", description="内存限制")
+    cpu_limit: float = Field(1.0, description="CPU 限制")
+    timeout: int = Field(300, description="默认命令超时时间（秒）")
     network_enabled: bool = Field(
-        False, description="Whether network access is allowed"
+        False, description="是否允许网络访问"
     )
 
 
 class MCPSettings(BaseModel):
-    """Configuration for MCP (Model Context Protocol)"""
+    """MCP（Model Context Protocol）的配置"""
 
     server_reference: str = Field(
-        "app.mcp.server", description="Module reference for the MCP server"
+        "app.mcp.server", description="MCP 服务器的模块引用"
     )
 
 
 class AppConfig(BaseModel):
     llm: Dict[str, LLMSettings]
     sandbox: Optional[SandboxSettings] = Field(
-        None, description="Sandbox configuration"
+        None, description="沙箱配置"
     )
     browser_config: Optional[BrowserSettings] = Field(
-        None, description="Browser configuration"
+        None, description="浏览器配置"
     )
     search_config: Optional[SearchSettings] = Field(
-        None, description="Search configuration"
+        None, description="搜索配置"
     )
-    mcp_config: Optional[MCPSettings] = Field(None, description="MCP configuration")
+    mcp_config: Optional[MCPSettings] = Field(None, description="MCP 配置")
 
     class Config:
         arbitrary_types_allowed = True

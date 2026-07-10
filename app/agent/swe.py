@@ -8,10 +8,10 @@ from app.tool import Bash, StrReplaceEditor, Terminate, ToolCollection
 
 
 class SWEAgent(ToolCallAgent):
-    """An agent that implements the SWEAgent paradigm for executing code and natural conversations."""
+    """一个实现 SWEAgent 范式的 agent，用于执行代码和自然对话。"""
 
     name: str = "swe"
-    description: str = "an autonomous AI programmer that interacts directly with the computer to solve tasks."
+    description: str = "一个自主的 AI 程序员，直接与计算机交互来解决问题。"
 
     system_prompt: str = SYSTEM_PROMPT
     next_step_prompt: str = ""

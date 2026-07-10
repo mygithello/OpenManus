@@ -10,23 +10,23 @@ class DuckDuckGoSearchEngine(WebSearchEngine):
         self, query: str, num_results: int = 10, *args, **kwargs
     ) -> List[SearchItem]:
         """
-        DuckDuckGo search engine.
+        DuckDuckGo 搜索引擎。
 
-        Returns results formatted according to SearchItem model.
+        返回根据 SearchItem 模型格式化的结果。
         """
         raw_results = DDGS().text(query, max_results=num_results)
 
         results = []
         for i, item in enumerate(raw_results):
             if isinstance(item, str):
-                # If it's just a URL
+                # 如果只是 URL
                 results.append(
                     SearchItem(
                         title=f"DuckDuckGo Result {i + 1}", url=item, description=None
                     )
                 )
             elif isinstance(item, dict):
-                # Extract data from the dictionary
+                # 从字典中提取数据
                 results.append(
                     SearchItem(
                         title=item.get("title", f"DuckDuckGo Result {i + 1}"),
@@ -35,7 +35,7 @@ class DuckDuckGoSearchEngine(WebSearchEngine):
                     )
                 )
             else:
-                # Try to extract attributes directly
+                # 尝试直接提取属性
                 try:
                     results.append(
                         SearchItem(
@@ -45,7 +45,7 @@ class DuckDuckGoSearchEngine(WebSearchEngine):
                         )
                     )
                 except Exception:
-                    # Fallback
+                    # 回退
                     results.append(
                         SearchItem(
                             title=f"DuckDuckGo Result {i + 1}",

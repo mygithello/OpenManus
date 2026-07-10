@@ -10,7 +10,7 @@ _print_level = "INFO"
 
 
 def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None):
-    """Adjust the log level to above level"""
+    """将日志级别调整到指定级别"""
     global _print_level
     _print_level = print_level
 
@@ -18,7 +18,7 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
     formatted_date = current_date.strftime("%Y%m%d%H%M%S")
     log_name = (
         f"{name}_{formatted_date}" if name else formatted_date
-    )  # name a log with prefix name
+    )  # 使用前缀名称命名日志
 
     _logger.remove()
     _logger.add(sys.stderr, level=print_level)

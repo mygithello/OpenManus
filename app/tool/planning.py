@@ -6,15 +6,15 @@ from app.tool.base import BaseTool, ToolResult
 
 
 _PLANNING_TOOL_DESCRIPTION = """
-A planning tool that allows the agent to create and manage plans for solving complex tasks.
-The tool provides functionality for creating plans, updating plan steps, and tracking progress.
+一个规划工具，允许 agent 创建和管理用于解决复杂任务的计划。
+该工具提供创建计划、更新计划步骤和跟踪进度的功能。
 """
 
 
 class PlanningTool(BaseTool):
     """
-    A planning tool that allows the agent to create and manage plans for solving complex tasks.
-    The tool provides functionality for creating plans, updating plan steps, and tracking progress.
+    一个规划工具，允许 agent 创建和管理用于解决复杂任务的计划。
+    该工具提供创建计划、更新计划步骤和跟踪进度的功能。
     """
 
     name: str = "planning"
@@ -23,7 +23,7 @@ class PlanningTool(BaseTool):
         "type": "object",
         "properties": {
             "command": {
-                "description": "The command to execute. Available commands: create, update, list, get, set_active, mark_step, delete.",
+                "description": "要执行的命令。可用命令：create, update, list, get, set_active, mark_step, delete。",
                 "enum": [
                     "create",
                     "update",
@@ -36,29 +36,29 @@ class PlanningTool(BaseTool):
                 "type": "string",
             },
             "plan_id": {
-                "description": "Unique identifier for the plan. Required for create, update, set_active, and delete commands. Optional for get and mark_step (uses active plan if not specified).",
+                "description": "计划的唯一标识符。create、update、set_active 和 delete 命令需要。get 和 mark_step 命令可选（如果未指定则使用活动计划）。",
                 "type": "string",
             },
             "title": {
-                "description": "Title for the plan. Required for create command, optional for update command.",
+                "description": "计划的标题。create 命令需要，update 命令可选。",
                 "type": "string",
             },
             "steps": {
-                "description": "List of plan steps. Required for create command, optional for update command.",
+                "description": "计划步骤列表。create 命令需要，update 命令可选。",
                 "type": "array",
                 "items": {"type": "string"},
             },
             "step_index": {
-                "description": "Index of the step to update (0-based). Required for mark_step command.",
+                "description": "要更新的步骤索引（从 0 开始）。mark_step 命令需要。",
                 "type": "integer",
             },
             "step_status": {
-                "description": "Status to set for a step. Used with mark_step command.",
+                "description": "为步骤设置的状态。与 mark_step 命令一起使用。",
                 "enum": ["not_started", "in_progress", "completed", "blocked"],
                 "type": "string",
             },
             "step_notes": {
-                "description": "Additional notes for a step. Optional for mark_step command.",
+                "description": "步骤的附加注释。mark_step 命令可选。",
                 "type": "string",
             },
         },
@@ -66,8 +66,8 @@ class PlanningTool(BaseTool):
         "additionalProperties": False,
     }
 
-    plans: dict = {}  # Dictionary to store plans by plan_id
-    _current_plan_id: Optional[str] = None  # Track the current active plan
+    plans: dict = {}  # 按 plan_id 存储计划的字典
+    _current_plan_id: Optional[str] = None  # 跟踪当前活动计划
 
     async def execute(
         self,
@@ -86,16 +86,16 @@ class PlanningTool(BaseTool):
         **kwargs,
     ):
         """
-        Execute the planning tool with the given command and parameters.
+        使用给定的命令和参数执行规划工具。
 
         Parameters:
-        - command: The operation to perform
-        - plan_id: Unique identifier for the plan
-        - title: Title for the plan (used with create command)
-        - steps: List of steps for the plan (used with create command)
-        - step_index: Index of the step to update (used with mark_step command)
-        - step_status: Status to set for a step (used with mark_step command)
-        - step_notes: Additional notes for a step (used with mark_step command)
+        - command: 要执行的操作
+        - plan_id: 计划的唯一标识符
+        - title: 计划的标题（与 create 命令一起使用）
+        - steps: 计划的步骤列表（与 create 命令一起使用）
+        - step_index: 要更新的步骤索引（与 mark_step 命令一起使用）
+        - step_status: 为步骤设置的状态（与 mark_step 命令一起使用）
+        - step_notes: 步骤的附加注释（与 mark_step 命令一起使用）
         """
 
         if command == "create":
@@ -120,7 +120,7 @@ class PlanningTool(BaseTool):
     def _create_plan(
         self, plan_id: Optional[str], title: Optional[str], steps: Optional[List[str]]
     ) -> ToolResult:
-        """Create a new plan with the given ID, title, and steps."""
+        """使用给定的 ID、标题和步骤创建新计划。"""
         if not plan_id:
             raise ToolError("Parameter `plan_id` is required for command: create")
 
@@ -141,7 +141,7 @@ class PlanningTool(BaseTool):
                 "Parameter `steps` must be a non-empty list of strings for command: create"
             )
 
-        # Create a new plan with initialized step statuses
+        # 创建带有初始化步骤状态的新计划
         plan = {
             "plan_id": plan_id,
             "title": title,
@@ -151,7 +151,7 @@ class PlanningTool(BaseTool):
         }
 
         self.plans[plan_id] = plan
-        self._current_plan_id = plan_id  # Set as active plan
+        self._current_plan_id = plan_id  # 设置为活动计划
 
         return ToolResult(
             output=f"Plan created successfully with ID: {plan_id}\n\n{self._format_plan(plan)}"
@@ -160,7 +160,7 @@ class PlanningTool(BaseTool):
     def _update_plan(
         self, plan_id: Optional[str], title: Optional[str], steps: Optional[List[str]]
     ) -> ToolResult:
-        """Update an existing plan with new title or steps."""
+        """使用新标题或步骤更新现有计划。"""
         if not plan_id:
             raise ToolError("Parameter `plan_id` is required for command: update")
 
@@ -180,17 +180,17 @@ class PlanningTool(BaseTool):
                     "Parameter `steps` must be a list of strings for command: update"
                 )
 
-            # Preserve existing step statuses for unchanged steps
+            # 为未更改的步骤保留现有步骤状态
             old_steps = plan["steps"]
             old_statuses = plan["step_statuses"]
             old_notes = plan["step_notes"]
 
-            # Create new step statuses and notes
+            # 创建新的步骤状态和注释
             new_statuses = []
             new_notes = []
 
             for i, step in enumerate(steps):
-                # If the step exists at the same position in old steps, preserve status and notes
+                # 如果步骤在旧步骤的相同位置存在，保留状态和注释
                 if i < len(old_steps) and step == old_steps[i]:
                     new_statuses.append(old_statuses[i])
                     new_notes.append(old_notes[i])
@@ -207,7 +207,7 @@ class PlanningTool(BaseTool):
         )
 
     def _list_plans(self) -> ToolResult:
-        """List all available plans."""
+        """列出所有可用计划。"""
         if not self.plans:
             return ToolResult(
                 output="No plans available. Create a plan with the 'create' command."
@@ -226,9 +226,9 @@ class PlanningTool(BaseTool):
         return ToolResult(output=output)
 
     def _get_plan(self, plan_id: Optional[str]) -> ToolResult:
-        """Get details of a specific plan."""
+        """获取特定计划的详细信息。"""
         if not plan_id:
-            # If no plan_id is provided, use the current active plan
+            # 如果未提供 plan_id，使用当前活动计划
             if not self._current_plan_id:
                 raise ToolError(
                     "No active plan. Please specify a plan_id or set an active plan."
@@ -242,7 +242,7 @@ class PlanningTool(BaseTool):
         return ToolResult(output=self._format_plan(plan))
 
     def _set_active_plan(self, plan_id: Optional[str]) -> ToolResult:
-        """Set a plan as the active plan."""
+        """将计划设置为活动计划。"""
         if not plan_id:
             raise ToolError("Parameter `plan_id` is required for command: set_active")
 
@@ -261,9 +261,9 @@ class PlanningTool(BaseTool):
         step_status: Optional[str],
         step_notes: Optional[str],
     ) -> ToolResult:
-        """Mark a step with a specific status and optional notes."""
+        """使用特定状态和可选注释标记步骤。"""
         if not plan_id:
-            # If no plan_id is provided, use the current active plan
+            # 如果未提供 plan_id，使用当前活动计划
             if not self._current_plan_id:
                 raise ToolError(
                     "No active plan. Please specify a plan_id or set an active plan."
@@ -304,7 +304,7 @@ class PlanningTool(BaseTool):
         )
 
     def _delete_plan(self, plan_id: Optional[str]) -> ToolResult:
-        """Delete a plan."""
+        """删除计划。"""
         if not plan_id:
             raise ToolError("Parameter `plan_id` is required for command: delete")
 
@@ -313,18 +313,18 @@ class PlanningTool(BaseTool):
 
         del self.plans[plan_id]
 
-        # If the deleted plan was the active plan, clear the active plan
+        # 如果删除的计划是活动计划，清除活动计划
         if self._current_plan_id == plan_id:
             self._current_plan_id = None
 
         return ToolResult(output=f"Plan '{plan_id}' has been deleted.")
 
     def _format_plan(self, plan: Dict) -> str:
-        """Format a plan for display."""
+        """格式化计划以供显示。"""
         output = f"Plan: {plan['title']} (ID: {plan['plan_id']})\n"
         output += "=" * len(output) + "\n\n"
 
-        # Calculate progress statistics
+        # 计算进度统计
         total_steps = len(plan["steps"])
         completed = sum(1 for status in plan["step_statuses"] if status == "completed")
         in_progress = sum(
@@ -345,7 +345,7 @@ class PlanningTool(BaseTool):
         output += f"Status: {completed} completed, {in_progress} in progress, {blocked} blocked, {not_started} not started\n\n"
         output += "Steps:\n"
 
-        # Add each step with its status and notes
+        # 添加每个步骤及其状态和注释
         for i, (step, status, notes) in enumerate(
             zip(plan["steps"], plan["step_statuses"], plan["step_notes"])
         ):

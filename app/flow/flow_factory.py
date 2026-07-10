@@ -7,11 +7,12 @@ from app.flow.planning import PlanningFlow
 
 
 class FlowType(str, Enum):
+    """流程类型枚举"""
     PLANNING = "planning"
 
 
 class FlowFactory:
-    """Factory for creating different types of flows with support for multiple agents"""
+    """用于创建不同类型流程的工厂类，支持多个 agent"""
 
     @staticmethod
     def create_flow(
