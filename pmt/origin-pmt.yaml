@@ -8,3 +8,8 @@ pmt:
   timestamp: '2026-07-10T13:47:56.249422+08:00'
   source: user
   content: 我有个 ylk-pmt的技能，分析下为什么刚才的提示词任务结束后，没有在当前项目的根目录下append ，没有记录我的历史提示词，没有触发找原因并修复这个skill
+- seq: 3
+  timestamp: '2026-07-10T13:57:34.196763+08:00'
+  source: user
+  content: 优化补充 ylk-pmt 技能：最后时候判断下当前项目根目录是否被git管理，如果是被git管理的，那么自动git add,commit,push
+    pmt目录下的最新更新的内容
