@@ -1,0 +1,140 @@
+# Global LLM configuration
+[llm]
+api_type = "openai"                          # DashScope 使用 OpenAI 兼容 API
+model = "qwen-plus"                         # DashScope 模型名称（支持 function calling）
+# 可选模型：qwen-turbo, qwen-plus, qwen-max（都支持 function calling）
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# API Key 可以留空，程序会自动按以下优先级获取：
+#   1. 配置文件中的 api_key（最高优先级）
+#   2. 环境变量 DASHSCOPE_API_KEY（推荐方式）
+#   3. 环境变量 OPENAI_API_KEY（兜底）
+api_key = ""
+max_tokens = 8192
+temperature = 0.0
+
+# [llm] # Amazon Bedrock
+# api_type = "aws"                                       # Required
+# model = "us.anthropic.claude-3-7-sonnet-20250219-v1:0" # Bedrock supported modelID
+# base_url = "bedrock-runtime.us-west-2.amazonaws.com"   # Not used now
+# max_tokens = 8192
+# temperature = 1.0
+# api_key = "bear"                                       # Required but not used for Bedrock
+
+# [llm] #AZURE OPENAI:
+# api_type= 'azure'
+# model = "YOUR_MODEL_NAME" #"gpt-4o-mini"
+# base_url = "{YOUR_AZURE_ENDPOINT.rstrip('/')}/openai/deployments/{AZURE_DEPLOYMENT_ID}"
+# api_key = "AZURE API KEY"
+# max_tokens = 8096
+# temperature = 0.0
+# api_version="AZURE API VERSION" #"2024-08-01-preview"
+
+# [llm] #OLLAMA:
+# api_type = 'ollama'
+# model = "llama3.2"
+# base_url = "http://localhost:11434/v1"
+# api_key = "ollama"
+# max_tokens = 4096
+# temperature = 0.0
+
+# [llm] #Jiekou.AI:
+# api_type = 'jiekou'
+# model = "claude-sonnet-4-5-20250929"                               # The LLM model to use
+# base_url = "https://api.jiekou.ai/openai"                          # API endpoint URL
+# api_key = "your Jiekou.AI api key"                                 # Your API key
+# max_tokens = 64000                                                 # Maximum number of tokens in the response
+# temperature = 0.0                                                  # Controls randomness
+
+# Optional configuration for specific LLM models
+[llm.vision]
+api_type = "openai"                        # DashScope 使用 OpenAI 兼容 API
+model = "qwen-vl-plus"                    # DashScope 视觉模型：qwen-vl-plus
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # DashScope API endpoint
+# 如果未设置，将从环境变量 DASHSCOPE_API_KEY 读取
+api_key = ""
+max_tokens = 8192                          # Maximum number of tokens in the response
+temperature = 0.0                          # Controls randomness for vision model
+
+# [llm.vision] #OLLAMA VISION:
+# api_type = 'ollama'
+# model = "llama3.2-vision"
+# base_url = "http://localhost:11434/v1"
+# api_key = "ollama"
+# max_tokens = 4096
+# temperature = 0.0
+
+# Optional configuration for specific browser configuration
+[browser]
+# Whether to run browser in headless mode (default: false)
+# 当前环境有 DISPLAY=:0，非 headless 模式稳定可用
+# 如需在无显示器的服务器运行，设为 true 并执行 playwright install chromium-headless-shell
+headless = false
+# Disable browser security features (default: true)
+disable_security = true
+# Extra arguments to pass to the browser
+# 添加一些反检测参数，减少被网站封锁的可能性
+extra_chromium_args = [
+    "--disable-blink-features=AutomationControlled",
+    "--disable-dev-shm-usage",
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
+# Path to a Chrome instance to use to connect to your normal browser
+# e.g. '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+#chrome_instance_path = ""
+# Connect to a browser instance via WebSocket
+#wss_url = ""
+# Connect to a browser instance via CDP
+#cdp_url = ""
+
+# Optional configuration, Proxy settings for the browser
+# [browser.proxy]
+# server = "http://proxy-server:port"
+# username = "proxy-username"
+# password = "proxy-password"
+
+# Optional configuration, Search settings.
+[search]
+# Search engine for agent to use. Default is "Google", can be set to "Baidu" or "DuckDuckGo" or "Bing".
+engine = "baidu"
+# Fallback engine order. Default is ["DuckDuckGo", "Baidu", "Bing"] - will try in this order after primary engine fails.
+fallback_engines = ["duckduckgo", "google", "bing"]
+# Seconds to wait before retrying all engines again when they all fail due to rate limits. Default is 60.
+retry_delay = 60
+# Maximum number of times to retry all engines when all fail. Default is 3.
+max_retries = 3
+# Language code for search results. Options: "en" (English), "zh" (Chinese), etc.
+lang = "zh"
+# Country code for search results. Options: "us" (United States), "cn" (China), etc.
+country = "cn"
+
+
+## Sandbox configuration
+#[sandbox]
+#use_sandbox = false
+#image = "python:3.12-slim"
+#work_dir = "/workspace"
+#memory_limit = "1g"  # 512m
+#cpu_limit = 2.0
+#timeout = 300
+#network_enabled = true
+
+# MCP (Model Context Protocol) configuration
+[mcp]
+server_reference = "app.mcp.server" # default server module reference
+
+# Optional Runflow configuration
+# Your can add additional agents into run-flow workflow to solve different-type tasks.
+[runflow]
+use_data_analysis_agent = false     # The Data Analysi Agent to solve various data analysis tasks
+
+# Daytona configuration
+[daytona]
+# 如果未设置，将从环境变量 DAYTONA_API_KEY 读取
+daytona_api_key = ""  # 在这里填入你的 Daytona API Key
+#daytona_server_url = "https://app.daytona.io/api"  # 可选，默认值
+#daytona_target = "us"  # 可选，默认值 "us"，可选值: "us" 或 "eu"
+#sandbox_image_name = "whitezxj/sandbox:0.1.0"  # 可选，默认值
+#sandbox_entrypoint = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"  # 可选，默认值
+#VNC_password = "123456"  # 可选，VNC 登录密码，默认值 "123456"
