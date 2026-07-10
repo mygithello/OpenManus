@@ -1,0 +1,84 @@
+sudo apt-get update
+sudo apt-get install -y \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libgtk-3-0 \
+    libxshmfence1 \
+    libcups2 \
+    libglib2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libevent-2.1-7 \
+    libpng16-16 \
+    libvpx7 \
+    libx264-160 \
+    libjpeg62-turbo \
+    libxslt1.1 \
+    libwoff1 \
+    libwebpdemux2 \
+    libharfbuzz-icu0 \
+    libenchant-2-2 \
+    libsecret-1-0 \
+    libhyphen0 \
+    libwayland-server0 \
+    libgles2 \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    libgstreamer1.0-0 \
+    libgstreamer-gl1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libgstreamer-plugins-bad1.0-0 \
+    libicu73 \
+    libxml2 \
+    libexpat1 \
+    libxcb1 \
+    libxkbcommon0 \
+    libx11-6 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxcursor1 \
+    libxrender1 \
+    libfontconfig1 \
+    libfreetype6 \
+    libgdk-pixbuf-2.0-0 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libcairo-gobject2 \
+    libx11-xcb1 \
+    libxcb-shm0 \
+    libatomic1 \
+    libepoxy0 \
+    libgtk-4-1 \
+    libharfbuzz0b \
+    libwayland-client0 \
+    libwayland-egl1 \
+    libwebp7 \
+    libopus0 \
+    libflite1 \
+    libmanette-0.2-0 \
+    liblcms2-2 \
+    fonts-noto-color-emoji \
+    fonts-unifont \
+    fonts-liberation \
+    fonts-wqy-zenhei \
+    xvfb
+
+
+apt-cache search libicu | grep -E "^libicu[0-9]"
+===================
+source venv/bin/activate
+pip install playwright
+playwright --version
+playwright install chromium
+
+如果运行时还提示缺库，根据具体缺失的 .so 文件用 apt-file search 或 dpkg -S 查找对应的包名补充安装。
