@@ -185,18 +185,12 @@ class ToolCallAgent(ReActAgent):
 
             # 检查结果是否是带有 base64_image 的 ToolResult
             if hasattr(result, "base64_image") and result.base64_image:
+                image_size_kb = len(result.base64_image) * 3 / 4 / 1024
+                logger.info(f"📷 Tool '{name}' returned screenshot: {image_size_kb:.2f} KB")
                 # 存储 base64_image 以便稍后在 tool_message 中使用
                 self._current_base64_image = result.base64_image
-
-                # Format result for display
-                observation = (
-                    f"Observed output of cmd `{name}` executed:\n{str(result)}"
-                    if result
-                    else f"Cmd `{name}` completed with no output"
-                )
-                return observation
-
-                # 格式化结果以供显示（标准情况）
+            else:
+                logger.debug(f"📷 Tool '{name}' did not return screenshot")
             observation = (
                 f"Observed output of cmd `{name}` executed:\n{str(result)}"
                 if result

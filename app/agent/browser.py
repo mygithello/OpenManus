@@ -22,6 +22,10 @@ class BrowserContextHelper:
 
     async def get_browser_state(self) -> Optional[dict]:
         browser_tool = self.agent.available_tools.get_tool(BrowserUseTool().name)
+        if not browser_tool:
+            browser_tool = self.agent.available_tools.get_tool(
+                "sandbox_browser"
+            )
         if not browser_tool or not hasattr(browser_tool, "get_current_state"):
             logger.warning("BrowserUseTool not found or doesn't have get_current_state")
             return None

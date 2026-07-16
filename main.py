@@ -13,8 +13,8 @@ async def main():
     )
     args = parser.parse_args()
 
-    # 创建 Manus agent
-    agent = Manus()
+    # 创建并初始化 Manus agent
+    agent = await Manus.create()
     try:
         # 如果提供了命令行提示，则使用它；否则询问用户输入
         prompt = args.prompt if args.prompt else input("请输入你的提示: ")

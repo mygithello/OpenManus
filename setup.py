@@ -33,6 +33,8 @@ setup(
         "aiofiles~=24.1.0",
         "pydantic_core>=2.27.2,<2.28.0",
         "colorama~=0.4.6",
+        "aiohttp>=3.9.0,<4.0.0",
+        "markdownify>=0.11.0,<1.0.0",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

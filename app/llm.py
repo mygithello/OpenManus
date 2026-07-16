@@ -39,6 +39,11 @@ MULTIMODAL_MODELS = [
     "claude-3-opus-20240229",
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
+    "qwen-vl-plus",  # DashScope 视觉模型
+    "qwen-vl-max",  # DashScope 视觉模型
+    "qwen/qwen2.5-vl-72b-instruct",  # DashScope 视觉模型
+    "qwen3.7-plus",  # DashScope 视觉模型
+    "qwen3.0-plus",  # DashScope 视觉模型
 ]
 
 
@@ -394,6 +399,24 @@ class LLM:
             # 检查模型是否支持图像
             supports_images = self.model in MULTIMODAL_MODELS
 
+            # 调试信息：检查是否有图像输入
+            has_images = any(
+                isinstance(msg, dict) and msg.get("base64_image")
+                or isinstance(msg, Message) and msg.base64_image
+                for msg in (system_msgs or []) + messages
+            )
+
+            if supports_images:
+                logger.info(f"👁️ Vision model enabled: {self.model} (supports images)")
+                if has_images:
+                    logger.info(f"📷 Image detected in messages - will be sent to vision model")
+                else:
+                    logger.debug(f"📷 No image in current messages")
+            else:
+                logger.warning(f"⚠️ Model {self.model} does NOT support images - visual understanding disabled")
+                if has_images:
+                    logger.warning(f"⚠️ Images detected but will be ignored (model doesn't support vision)")
+
             # 格式化系统消息和用户消息，检查图像支持
             if system_msgs:
                 system_msgs = self.format_messages(system_msgs, supports_images)
@@ -686,6 +709,24 @@ class LLM:
 
             # 检查模型是否支持图像
             supports_images = self.model in MULTIMODAL_MODELS
+
+            # 调试信息：检查是否有图像输入
+            has_images = any(
+                isinstance(msg, dict) and msg.get("base64_image")
+                or isinstance(msg, Message) and msg.base64_image
+                for msg in (system_msgs or []) + messages
+            )
+
+            if supports_images:
+                logger.info(f"👁️ Vision model enabled for tool calling: {self.model}")
+                if has_images:
+                    logger.info(f"📷 Image detected in tool call messages - will be sent to vision model")
+            else:
+                # 只有在有图片但模型不支持时，才输出警告
+                # 如果没有图片，就不需要警告（模型不支持图片但不影响正常使用）
+                if has_images:
+                    logger.warning(f"⚠️ Model {self.model} does NOT support images for tool calling")
+                    logger.warning(f"⚠️ Images detected but will be ignored (model doesn't support vision)")
 
             # 格式化消息
             if system_msgs:

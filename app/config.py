@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import tomllib
@@ -125,6 +126,34 @@ class MCPSettings(BaseModel):
     server_reference: str = Field(
         "app.mcp.server", description="MCP 服务器的模块引用"
     )
+    servers: Dict[str, MCPServerConfig] = Field(
+        default_factory=dict, description="MCP 服务器配置"
+    )
+
+    @classmethod
+    def load_server_config(cls) -> Dict[str, MCPServerConfig]:
+        """从 JSON 文件加载 MCP 服务器配置"""
+        config_path = PROJECT_ROOT / "config" / "mcp.json"
+
+        try:
+            config_file = config_path if config_path.exists() else None
+            if not config_file:
+                return {}
+
+            with config_file.open() as f:
+                data = json.load(f)
+                servers = {}
+
+                for server_id, server_config in data.get("mcpServers", {}).items():
+                    servers[server_id] = MCPServerConfig(
+                        type=server_config["type"],
+                        url=server_config.get("url"),
+                        command=server_config.get("command"),
+                        args=server_config.get("args", []),
+                    )
+                return servers
+        except Exception as e:
+            raise ValueError(f"Failed to load MCP server config: {e}")
 
 
 class AppConfig(BaseModel):
@@ -141,6 +170,9 @@ class AppConfig(BaseModel):
     mcp_config: Optional[MCPSettings] = Field(None, description="MCP 配置")
     daytona_config: Optional[DaytonaSettings] = Field(
         None, description="Daytona 配置"
+    )
+    run_flow_config: Optional[RunflowSettings] = Field(
+        None, description="运行流程配置"
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -273,9 +305,17 @@ class Config:
         mcp_config = raw_config.get("mcp", {})
         mcp_settings = None
         if mcp_config:
+            # 从 JSON 文件加载服务器配置
+            mcp_config["servers"] = MCPSettings.load_server_config()
             mcp_settings = MCPSettings(**mcp_config)
         else:
-            mcp_settings = MCPSettings()
+            mcp_settings = MCPSettings(servers=MCPSettings.load_server_config())
+
+        run_flow_config = raw_config.get("runflow")
+        if run_flow_config:
+            run_flow_settings = RunflowSettings(**run_flow_config)
+        else:
+            run_flow_settings = RunflowSettings()
 
         config_dict = {
             "llm": {
@@ -296,6 +336,7 @@ class Config:
             "search_config": search_settings,
             "mcp_config": mcp_settings,
             "daytona_config": daytona_settings,
+            "run_flow_config": run_flow_settings,
         }
 
         self._config = AppConfig(**config_dict)
@@ -325,6 +366,11 @@ class Config:
     def mcp_config(self) -> MCPSettings:
         """Get the MCP configuration"""
         return self._config.mcp_config
+
+    @property
+    def run_flow_config(self) -> RunflowSettings:
+        """获取运行流程配置"""
+        return self._config.run_flow_config
 
     @property
     def workspace_root(self) -> Path:

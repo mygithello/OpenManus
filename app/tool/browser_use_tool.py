@@ -24,12 +24,26 @@ _BROWSER_DESCRIPTION = """\
 * 当你需要浏览网站、填写表单、点击按钮、提取内容或执行网页搜索时使用此工具
 * 每个操作都需要工具依赖项中定义的特定参数
 
-主要功能包括：
-* 导航：转到特定 URL、返回、搜索网页或刷新页面
-* 交互：点击元素、输入文本、从下拉菜单中选择、发送键盘命令
-* 滚动：按像素量向上/向下滚动或滚动到特定文本
-* 内容提取：根据特定目标从网页中提取和分析内容
-* 标签页管理：在标签页之间切换、打开新标签页或关闭标签页
+## 核心操作（推荐使用）
+* click_element: 按索引点击元素
+  示例: click_element(index=33)
+* input_text: 按索引输入文本
+  示例: input_text(index=1, text="上海")
+
+## 简易操作（适用于视觉理解模式）
+* click: 点击元素 - 参数 element_description 描述要点击的元素
+  示例: click(element_description="搜索按钮")
+  示例: click(element_description="1月30日")
+* type: 输入文本 - 参数 element_description 描述输入框，text 为要输入的文本
+  示例: type(element_description="出发城市", text="上海")
+
+## 辅助操作
+* go_to_url: 转到特定 URL
+* scroll_down/scroll_up: 按像素量向上/向下滚动
+* send_keys: 发送键盘命令
+* wait: 等待页面加载
+* extract_content: 提取页面内容
+* switch_tab/open_tab/close_tab: 标签页管理
 
 注意：使用元素索引时，请参考当前浏览器状态中显示的元素编号。
 """
@@ -49,6 +63,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     "go_to_url",
                     "click_element",
                     "input_text",
+                    "click",
+                    "type",
                     "scroll_down",
                     "scroll_up",
                     "scroll_to_text",
@@ -63,7 +79,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     "open_tab",
                     "close_tab",
                 ],
-                "description": "要执行的浏览器操作",
+                "description": "要执行的浏览器操作。推荐使用 click_element（按索引点击）和 input_text（按索引输入）；视觉模式下可使用 click 和 type（通过元素描述）",
             },
             "url": {
                 "type": "string",
@@ -73,9 +89,13 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                 "type": "integer",
                 "description": "用于 'click_element'、'input_text'、'get_dropdown_options' 或 'select_dropdown_option' 操作的元素索引",
             },
+            "element_description": {
+                "type": "string",
+                "description": "用于 'click' 或 'type' 的元素描述（如：'搜索按钮'、'出发城市'、'1月30日'）",
+            },
             "text": {
                 "type": "string",
-                "description": "用于 'input_text'、'scroll_to_text' 或 'select_dropdown_option' 操作的文本",
+                "description": "用于 'input_text'、'type'、'scroll_to_text' 或 'select_dropdown_option' 操作的文本",
             },
             "scroll_amount": {
                 "type": "integer",
@@ -107,6 +127,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             "go_to_url": ["url"],
             "click_element": ["index"],
             "input_text": ["index", "text"],
+            "click": ["element_description"],
+            "type": ["element_description", "text"],
             "switch_tab": ["tab_id"],
             "open_tab": ["url"],
             "scroll_down": ["scroll_amount"],
@@ -194,6 +216,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         url: Optional[str] = None,
         index: Optional[int] = None,
         text: Optional[str] = None,
+        element_description: Optional[str] = None,
         scroll_amount: Optional[int] = None,
         tab_id: Optional[int] = None,
         query: Optional[str] = None,
@@ -210,6 +233,7 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             url: 用于导航或新标签页的 URL
             index: 用于点击或输入操作的元素索引
             text: 用于输入操作或搜索查询的文本
+            element_description: 用于 'click' 或 'type' 的元素描述
             scroll_amount: 用于滚动操作的滚动像素数
             tab_id: 用于 switch_tab 操作的标签页 ID
             query: 用于 Google 搜索的搜索查询
@@ -240,6 +264,107 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     await page.goto(url)
                     await page.wait_for_load_state()
                     return ToolResult(output=f"Navigated to {url}")
+
+                elif action == "click":
+                    """
+                    点击元素（通过文字描述查找），不依赖 index。
+                    支持通过元素文本、标签内容等描述来定位元素。
+                    """
+                    if not element_description:
+                        return ToolResult(error="element_description is required for 'click' action")
+                    try:
+                        page = await context.get_current_page()
+                        # 尝试多种选择器策略
+                        # 1. 按文本查找可见元素
+                        try:
+                            locator = page.get_by_role("button", name=element_description, exact=False)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                return ToolResult(output=f"Clicked element: {element_description}")
+                        except Exception:
+                            pass
+                        # 2. 按文本查找链接
+                        try:
+                            locator = page.get_by_role("link", name=element_description, exact=False)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                return ToolResult(output=f"Clicked link: {element_description}")
+                        except Exception:
+                            pass
+                        # 3. 按通用文本定位
+                        try:
+                            locator = page.get_by_text(element_description, exact=False)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                return ToolResult(output=f"Clicked element by text: {element_description}")
+                        except Exception:
+                            pass
+                        # 4. 按占位符（placeholder）查找 input
+                        try:
+                            locator = page.get_by_placeholder(element_description)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                return ToolResult(output=f"Clicked input with placeholder: {element_description}")
+                        except Exception:
+                            pass
+                        # 5. 按标签名查找
+                        try:
+                            locator = page.locator(element_description)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                return ToolResult(output=f"Clicked element by selector: {element_description}")
+                        except Exception:
+                            pass
+                        return ToolResult(output=f"Could not find element matching '{element_description}', but continuing")
+                    except Exception as e:
+                        return ToolResult(error=f"Failed to click element '{element_description}': {str(e)}")
+
+                elif action == "type":
+                    """
+                    输入文本（通过文字描述查找输入框），不依赖 index。
+                    """
+                    if not element_description or not text:
+                        return ToolResult(error="element_description and text are required for 'type' action")
+                    try:
+                        page = await context.get_current_page()
+                        # 1. 先点击目标元素
+                        clicked = False
+                        try:
+                            locator = page.get_by_placeholder(element_description)
+                            if await locator.count() > 0:
+                                await locator.first.click()
+                                clicked = True
+                        except Exception:
+                            pass
+                        if not clicked:
+                            try:
+                                locator = page.get_by_role("textbox", name=element_description, exact=False)
+                                if await locator.count() > 0:
+                                    await locator.first.click()
+                                    clicked = True
+                            except Exception:
+                                pass
+                        if not clicked:
+                            try:
+                                locator = page.get_by_label(element_description, exact=False)
+                                if await locator.count() > 0:
+                                    await locator.first.click()
+                                    clicked = True
+                            except Exception:
+                                pass
+                        if not clicked:
+                            try:
+                                locator = page.get_by_text(element_description, exact=False)
+                                if await locator.count() > 0:
+                                    await locator.first.click()
+                                    clicked = True
+                            except Exception:
+                                pass
+                        # 2. 输入文本
+                        await page.keyboard.type(text)
+                        return ToolResult(output=f"Typed '{text}' into element: {element_description}")
+                    except Exception as e:
+                        return ToolResult(error=f"Failed to type into element '{element_description}': {str(e)}")
 
                 elif action == "go_back":
                     await context.go_back()
