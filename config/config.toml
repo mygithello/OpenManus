@@ -48,7 +48,7 @@ temperature = 0.0
 # Optional configuration for specific LLM models
 [llm.vision]
 api_type = "openai"                        # DashScope 使用 OpenAI 兼容 API
-model = "qwen-vl-plus"                    # DashScope 视觉模型：qwen-vl-plus
+model = "qwen3.7-plus"                    # DashScope 视觉模型：qwen-vl-plus
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # DashScope API endpoint
 # 如果未设置，将从环境变量 DASHSCOPE_API_KEY 读取
 api_key = ""
