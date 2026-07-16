@@ -86,6 +86,12 @@ class BrowserSettings(BaseModel):
     )
 
 
+class RunflowSettings(BaseModel):
+    use_data_analysis_agent: bool = Field(
+        default=False, description="在运行流程中启用数据分析 agent"
+    )
+
+
 class SandboxSettings(BaseModel):
     """执行沙箱的配置"""
 
@@ -117,6 +123,17 @@ class DaytonaSettings(BaseModel):
     )
     VNC_password: Optional[str] = Field(
         "123456", description="沙箱中 VNC 服务的密码"
+    )
+
+
+class MCPServerConfig(BaseModel):
+    """单个 MCP 服务器的配置"""
+
+    type: str = Field(..., description="服务器连接类型（sse 或 stdio）")
+    url: Optional[str] = Field(None, description="SSE 连接的服务器 URL")
+    command: Optional[str] = Field(None, description="stdio 连接的命令")
+    args: List[str] = Field(
+        default_factory=list, description="stdio 命令的参数"
     )
 
 
