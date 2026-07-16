@@ -134,12 +134,21 @@ class Manus(ToolCallAgent):
 
     async def cleanup(self):
         """清理 Manus agent 资源。"""
-        if self.browser_context_helper:
-            await self.browser_context_helper.cleanup_browser()
-        # 仅在已初始化的情况下断开所有 MCP 服务器连接
-        if self._initialized:
-            await self.disconnect_mcp_server()
-            self._initialized = False
+        try:
+            if self.browser_context_helper:
+                await self.browser_context_helper.cleanup_browser()
+            # 仅在已初始化的情况下断开所有 MCP 服务器连接
+            if self._initialized:
+                await self.disconnect_mcp_server()
+                self._initialized = False
+        except Exception as e:
+            logger.error(f"🚨 Error during Manus cleanup: {e}")
+        finally:
+            # 调用父类 cleanup，清理各工具的残留资源
+            try:
+                await super().cleanup()
+            except Exception as e:
+                logger.error(f"🚨 Error during tool cleanup: {e}")
 
     async def think(self) -> bool:
         """处理当前状态，并在适当的上下文中决定下一步行动。"""
@@ -171,31 +180,37 @@ class Manus(ToolCallAgent):
             tool.name for tool in self.available_tools.tools
         ]
 
-        # 智能切换策略：
-        # browser-use 库返回的元素信息格式：[index]<type>text</type>
-        # 包含：索引、元素类型（button、input等）、文本描述（如"出发地"、"搜索"等）
-        # 如果元素描述足够详细，快速模型应该能够根据文本匹配选择正确的元素
-        # 因此：默认使用快速模型，只在元素描述不够清晰或需要视觉理解时才使用视觉模型
-
         # 如果浏览器工具可用，总是使用 browser_context_helper 来格式化 prompt
         # 这样 LLM 能看到浏览器状态和强调使用工具的提示
         if browser_tool_available:
-            # 默认使用快速模型，不切换到视觉模型
-            # browser-use 返回的元素文本描述应该足够详细，让 LLM 根据文本匹配选择元素
-            logger.debug(f"🚀 Using default model for browser automation: {self.llm.model}")
-            logger.debug(f"📝 Browser-use provides element descriptions in format: [index]<type>text</type>")
+            # 检测到浏览器截图时，切换到视觉模型（如 qwen3.7-plus）
+            # 否则使用默认模型（qwen-plus），通过元素文本描述来操作浏览器
+            if has_browser_screenshot and "vision" in config.llm:
+                vision_llm = LLM("vision")
+                if vision_llm.model != self.llm.model:
+                    logger.info(
+                        f"👁️ Switching to vision model for browser screenshot understanding: "
+                        f"{self.llm.model} -> {vision_llm.model}"
+                    )
+                    self.llm = vision_llm
+                else:
+                    logger.debug(
+                        f"👁️ Current model already supports vision: {self.llm.model}"
+                    )
+            else:
+                logger.debug(
+                    f"🚀 Using text model for browser automation: {self.llm.model}"
+                )
+                logger.debug(
+                    "📝 Browser-use provides element descriptions in text format"
+                )
 
             # 总是使用 browser_context_helper 来格式化 prompt
-            # 这样 LLM 能看到浏览器状态（即使浏览器还没打开，也会提示需要打开）
             self.next_step_prompt = (
                 await self.browser_context_helper.format_next_step_prompt()
             )
 
         result = await super().think()
-
-        # 注意：不要在这里重新调用 think()
-        # 让第一次选择的工具正常执行，执行后会有截图
-        # 下次 think() 时会自动检测到截图并切换到视觉模型
 
         # Restore original prompt (but keep vision model if browser screenshot is still present)
         self.next_step_prompt = original_prompt

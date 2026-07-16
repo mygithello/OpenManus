@@ -27,9 +27,14 @@ async def main():
         logger.info("请求处理完成。")
     except KeyboardInterrupt:
         logger.warning("操作被中断。")
+    except Exception as e:
+        logger.exception(f"运行过程中发生未预期的错误: {e}")
     finally:
-        # 确保在退出前清理 agent 资源
-        await agent.cleanup()
+        # 确保在退出前清理 agent 资源，并捕获清理过程中的异常
+        try:
+            await agent.cleanup()
+        except Exception as e:
+            logger.error(f"清理过程中发生错误: {e}")
 
 
 if __name__ == "__main__":
