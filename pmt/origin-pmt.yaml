@@ -29,3 +29,7 @@ pmt:
   source: user
   content: 参考分析样例项目：/home/yunlk/soft/dev/apps/sources/OpenManus-cy 的涉及的daytona使用的代码，对当前项目/home/yunlk/soft/dev/apps/OpenManus进行daytona配置，默认使用daytona,
     daytona_api_key已经在环境变量中配置好了
+- seq: 7
+  timestamp: '2026-07-27T11:33:09.030477+08:00'
+  source: user
+  content: openmanus 操作浏览器时候发现：①浏览器没有全屏；②截图坐标与DOM元素对应不上。需要分析修复浏览器全屏和截图坐标问题，以及后续扩展的模型自动切换机制
