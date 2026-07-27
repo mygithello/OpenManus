@@ -187,7 +187,16 @@ class Manus(ToolCallAgent):
             # 否则使用默认模型（qwen-plus），通过元素文本描述来操作浏览器
             if has_browser_screenshot and "vision" in config.llm:
                 vision_llm = LLM("vision")
-                if vision_llm.model != self.llm.model:
+                vision_model_name = vision_llm.model
+                # 检查视觉模型是否可用（配额是否耗尽）
+                if not LLM.is_model_available(vision_model_name):
+                    logger.warning(
+                        f"⚠️ 视觉模型 '{vision_model_name}' 不可用（配额耗尽等），"
+                        f"自动降级为文本模型 '{self.llm.model}'。"
+                        f"浏览器操作将使用 DOM 元素索引和文本描述。"
+                    )
+                    has_browser_screenshot = False
+                elif vision_llm.model != self.llm.model:
                     logger.info(
                         f"👁️ Switching to vision model for browser screenshot understanding: "
                         f"{self.llm.model} -> {vision_llm.model}"
@@ -210,7 +219,41 @@ class Manus(ToolCallAgent):
                 await self.browser_context_helper.format_next_step_prompt()
             )
 
-        result = await super().think()
+        # 执行 think，如果视觉模型在运行时突发不可用，自动降级重试
+        has_vision_failed = False
+        while True:
+            try:
+                result = await super().think()
+                break  # 成功则跳出循环
+            except Exception as e:
+                # 从异常中提取实际异常（可能被 tenacity RetryError 包装）
+                actual_exc = e
+                # tenacity 可能在 stop 条件触发时将异常包装为 RetryError
+                if hasattr(e, "__cause__") and e.__cause__ is not None:
+                    actual_exc = e.__cause__
+
+                # 检查是否是视觉模型的 PermissionDeniedError（配额耗尽）
+                is_vision_403 = (
+                    self.llm != original_llm
+                    and self.llm.model in LLM._unavailable_models
+                )
+                if is_vision_403 and not has_vision_failed:
+                    has_vision_failed = True
+                    logger.warning(
+                        f"⚠️ 视觉模型 '{self.llm.model}' 在运行时不可用（配额耗尽），"
+                        f"自动降级回文本模型 '{original_llm.model}' 重试。"
+                    )
+                    # 回退到原始文本模型，移除截图，重新执行
+                    self.llm = original_llm
+                    has_browser_screenshot = False
+                    # 移除最后一条消息（包含截图的那个），避免重试时带图
+                    if self.memory.messages:
+                        self.memory.messages.pop()
+                    self.next_step_prompt = (
+                        await self.browser_context_helper.format_next_step_prompt()
+                    )
+                    continue
+                raise  # 其他错误正常抛出
 
         # Restore original prompt (but keep vision model if browser screenshot is still present)
         self.next_step_prompt = original_prompt

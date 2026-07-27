@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Union
 
 import tiktoken
 from openai import (
@@ -8,11 +8,13 @@ from openai import (
     AsyncOpenAI,
     AuthenticationError,
     OpenAIError,
+    PermissionDeniedError,
     RateLimitError,
 )
 from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from tenacity import (
     retry,
+    retry_if_exception,
     retry_if_exception_type,
     stop_after_attempt,
     wait_random_exponential,
@@ -183,8 +185,30 @@ class TokenCounter:
         return total_tokens
 
 
+def _should_retry_api(exception):
+    """判断 API 错误是否应重试。
+    配额耗尽（403）和认证失败（401）不重试，直接降级。"""
+    if isinstance(exception, (PermissionDeniedError, AuthenticationError)):
+        return False
+    return isinstance(exception, (APIError, RateLimitError, Exception, ValueError))
+
+
 class LLM:
     _instances: Dict[str, "LLM"] = {}
+    # 模型可用性追踪（类级别，跨实例共享）
+    # 记录不可用的模型名（如配额耗尽）
+    _unavailable_models: Set[str] = set()
+
+    @classmethod
+    def mark_model_unavailable(cls, model_name: str, reason: str = "") -> None:
+        """标记某个模型不可用（如配额耗尽），避免后续重复尝试。"""
+        cls._unavailable_models.add(model_name)
+        logger.warning(f"⚠️ 模型 '{model_name}' 已被标记为不可用: {reason or '未知原因'}")
+
+    @classmethod
+    def is_model_available(cls, model_name: str) -> bool:
+        """检查某个模型是否可用。"""
+        return model_name not in cls._unavailable_models
 
     def __new__(
         cls, config_name: str = "default", llm_config: Optional[LLMSettings] = None
@@ -366,9 +390,7 @@ class LLM:
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        retry=retry_if_exception(_should_retry_api),
     )
     async def ask(
         self,
@@ -499,6 +521,14 @@ class LLM:
             logger.exception(f"OpenAI API error")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, PermissionDeniedError):
+                self.mark_model_unavailable(
+                    self.model,
+                    f"API 返回 403 权限错误: {getattr(oe, 'message', str(oe))[:120]}"
+                )
+                logger.error(
+                    f"🚫 模型 '{self.model}' 配额已耗尽或权限不足，已自动标记为不可用。"
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):
@@ -510,10 +540,8 @@ class LLM:
 
     @retry(
         wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        stop=stop_after_attempt(2),
+        retry=retry_if_exception(_should_retry_api),
     )
     async def ask_with_images(
         self,
@@ -655,6 +683,14 @@ class LLM:
             logger.error(f"OpenAI API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, PermissionDeniedError):
+                self.mark_model_unavailable(
+                    self.model,
+                    f"API 返回 403 权限错误: {getattr(oe, 'message', str(oe))[:120]}"
+                )
+                logger.error(
+                    f"🚫 模型 '{self.model}' 配额已耗尽或权限不足，已自动标记为不可用。"
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):
@@ -667,9 +703,7 @@ class LLM:
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
-        retry=retry_if_exception_type(
-            (OpenAIError, Exception, ValueError)
-        ),  # Don't retry TokenLimitExceeded
+        retry=retry_if_exception(_should_retry_api),
     )
     async def ask_tool(
         self,
@@ -804,6 +838,16 @@ class LLM:
             logger.error(f"OpenAI API error: {oe}")
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
+            elif isinstance(oe, PermissionDeniedError):
+                # 配额耗尽或权限不足 → 标记模型不可用，避免后续重试
+                self.mark_model_unavailable(
+                    self.model,
+                    f"API 返回 403 权限错误: {getattr(oe, 'message', str(oe))[:120]}"
+                )
+                logger.error(
+                    f"🚫 模型 '{self.model}' 配额已耗尽或权限不足，已自动标记为不可用。"
+                    f"后续将自动切换到可用模型。"
+                )
             elif isinstance(oe, RateLimitError):
                 logger.error("Rate limit exceeded. Consider increasing retry attempts.")
             elif isinstance(oe, APIError):

@@ -194,6 +194,9 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         if not isinstance(value, list) or value:
                             browser_config_kwargs[attr] = value
 
+            # 确保 --start-maximized 被添加，让浏览器窗口最大化
+            self._ensure_maximized(browser_config_kwargs)
+
             self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
 
         if self.context is None:
@@ -216,55 +219,80 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         return self.context
 
     async def _inject_stealth_scripts(self) -> None:
-        """注入反检测脚本以绕过网站的自动化检测。"""
+        """注入反检测脚本以绕过网站的自动化检测。
+        browser_use 的 add_init_script 已注入部分脚本（webdriver/languages/plugins/chrome/permissions），
+        本方法补充注入 browser_use 未覆盖的脚本（如 WebGL vendor），并优先保留已注入的部分。
+        """
         try:
             page = await self.context.get_current_page()
 
-            # 注入自定义 User-Agent 和 navigator 覆盖
+            # 注入补充的反检测脚本，使用 try/catch 避免与 add_init_script 冲突
             stealth_js = """
-            // 覆盖 navigator.webdriver 属性
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
+            try {
+                // 覆盖 navigator.webdriver 属性（可能已被 add_init_script 设置，跳过错误）
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            } catch(e) {}
 
-            // 覆盖 chrome 对象
-            window.chrome = {
-                runtime: {},
-                loadTimes: function() {},
-                csi: function() {},
-                app: {}
-            };
+            try {
+                // 覆盖 chrome 对象
+                window.chrome = window.chrome || {
+                    runtime: {},
+                    loadTimes: function() {},
+                    csi: function() {},
+                    app: {}
+                };
+            } catch(e) {}
 
-            // 覆盖 permissions
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-                parameters.name === 'notifications' ?
-                Promise.resolve({state: Notification.permission}) :
-                originalQuery(parameters)
-            );
+            try {
+                // 覆盖 permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                    Promise.resolve({state: Notification.permission}) :
+                    originalQuery(parameters)
+                );
+            } catch(e) {}
 
-            // 覆盖 plugins 数组
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
+            try {
+                // 覆盖 plugins 数组
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+            } catch(e) {}
 
-            // 覆盖 languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['zh-CN', 'zh', 'en']
-            });
+            try {
+                // 覆盖 languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['zh-CN', 'zh', 'en']
+                });
+            } catch(e) {}
 
-            // 覆盖 webgl vendor 信息
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                if (parameter === 37445) return 'Intel Inc.';
-                if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-                return getParameter(parameter);
-            };
+            // WebGL vendor 覆盖（browser_use 未注入，始终执行）
+            try {
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) return 'Intel Inc.';
+                    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                    return getParameter.call(this, parameter);
+                };
+            } catch(e) {}
             """
             await page.evaluate(stealth_js)
             logger.info("🕵️ Anti-detection stealth scripts injected successfully")
         except Exception as e:
             logger.warning(f"⚠️ Failed to inject stealth scripts: {e}")
+
+    @staticmethod
+    def _ensure_maximized(browser_config_kwargs: dict) -> None:
+        """确保浏览器窗口启动时最大化。"""
+        max_flag = "--start-maximized"
+        if "extra_chromium_args" not in browser_config_kwargs:
+            browser_config_kwargs["extra_chromium_args"] = []
+        args = browser_config_kwargs["extra_chromium_args"]
+        if isinstance(args, list) and max_flag not in args:
+            args.append(max_flag)
 
     async def execute(
         self,
@@ -318,6 +346,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         )
 
                     # 检测并修正携程机票 URL 中的过期日期
+                    # 修正规则：仅当 URL 中日期年份与当前年份不同时，自动修正为当前年份
+                    # 不修正同一年份的日期，即使已过期（可能是用户明确查询的历史日期）
                     original_url = url
                     if "flights.ctrip.com" in url and "date=" in url:
                         date_match = re.search(r'date=(\d{4})-(\d{2})-(\d{2})', url)
@@ -325,8 +355,8 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                             try:
                                 url_date = datetime.strptime(date_match.group(0)[5:], '%Y-%m-%d').date()
                                 today = datetime.now().date()
-                                if url_date < today:
-                                    # 日期在过去，自动修正为当前年份
+                                # 仅在年份不同时进行修正（如模板示例中的过期年份）
+                                if url_date.year != today.year and url_date < today:
                                     corrected_date = url_date.replace(year=today.year)
                                     # 如果修正后仍在过去，使用明年
                                     if corrected_date < today:
@@ -703,17 +733,20 @@ Page content:
             elif hasattr(ctx, "config") and hasattr(ctx.config, "browser_window_size"):
                 viewport_height = ctx.config.browser_window_size.get("height", 0)
 
-            # 为状态拍摄截图
-            page = await ctx.get_current_page()
+            # 使用 browser_use 内部已生成的截图（viewport 截图，与 DOM 坐标对齐）
+            # 避免重新 full_page 截图导致高亮标签位置与页面元素不匹配
+            if state.screenshot:
+                screenshot = state.screenshot
+            else:
+                # 回退：手动截图（仅在无缓存截图时）
+                page = await ctx.get_current_page()
+                await page.bring_to_front()
+                await page.wait_for_load_state()
+                raw_screenshot = await page.screenshot(
+                    full_page=False, animations="disabled", type="jpeg", quality=100
+                )
+                screenshot = base64.b64encode(raw_screenshot).decode("utf-8")
 
-            await page.bring_to_front()
-            await page.wait_for_load_state()
-
-            screenshot = await page.screenshot(
-                full_page=True, animations="disabled", type="jpeg", quality=100
-            )
-
-            screenshot = base64.b64encode(screenshot).decode("utf-8")
             screenshot_size_kb = len(screenshot) * 3 / 4 / 1024  # 估算图片大小（KB）
 
             # 获取可交互元素信息
