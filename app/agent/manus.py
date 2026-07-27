@@ -157,123 +157,23 @@ class Manus(ToolCallAgent):
             self._initialized = True
 
         original_prompt = self.next_step_prompt
-        original_llm = self.llm
 
-        # 检查是否有浏览器工具在消息历史中（已使用过）
-        recent_messages = self.memory.messages[-5:] if self.memory.messages else []
-        browser_in_use = any(
-            tc.function.name == BrowserUseTool().name
-            for msg in recent_messages
-            if msg.tool_calls
-            for tc in msg.tool_calls
-        )
-
-        # 检查消息中是否有浏览器截图（说明浏览器工具已使用，需要视觉理解）
-        has_browser_screenshot = any(
-            (isinstance(msg, Message) and msg.base64_image)
-            or (isinstance(msg, dict) and msg.get("base64_image"))
-            for msg in recent_messages
-        )
-
-        # 检查工具列表中是否包含浏览器工具（可能即将使用）
+        # 检查工具列表中是否包含浏览器工具
         browser_tool_available = BrowserUseTool().name in [
             tool.name for tool in self.available_tools.tools
         ]
 
-        # 如果浏览器工具可用，总是使用 browser_context_helper 来格式化 prompt
-        # 这样 LLM 能看到浏览器状态和强调使用工具的提示
+        # 浏览器工具可用时，使用 browser_context_helper 格式化 prompt
+        # 视觉识别由 browser_use_tool 内置的 _execute_vision_action 自行处理
         if browser_tool_available:
-            # 检测到浏览器截图时，切换到视觉模型（如 qwen3.7-plus）
-            # 否则使用默认模型（qwen-plus），通过元素文本描述来操作浏览器
-            if has_browser_screenshot and "vision" in config.llm:
-                vision_llm = LLM("vision")
-                vision_model_name = vision_llm.model
-                # 检查视觉模型是否可用（配额是否耗尽）
-                if not LLM.is_model_available(vision_model_name):
-                    logger.warning(
-                        f"⚠️ 视觉模型 '{vision_model_name}' 不可用（配额耗尽等），"
-                        f"自动降级为文本模型 '{self.llm.model}'。"
-                        f"浏览器操作将使用 DOM 元素索引和文本描述。"
-                    )
-                    has_browser_screenshot = False
-                elif vision_llm.model != self.llm.model:
-                    logger.info(
-                        f"👁️ Switching to vision model for browser screenshot understanding: "
-                        f"{self.llm.model} -> {vision_llm.model}"
-                    )
-                    self.llm = vision_llm
-                else:
-                    logger.debug(
-                        f"👁️ Current model already supports vision: {self.llm.model}"
-                    )
-            else:
-                logger.debug(
-                    f"🚀 Using text model for browser automation: {self.llm.model}"
-                )
-                logger.debug(
-                    "📝 Browser-use provides element descriptions in text format"
-                )
-
-            # 总是使用 browser_context_helper 来格式化 prompt
+            logger.debug(f"🚀 Using default model for browser automation: {self.llm.model}")
             self.next_step_prompt = (
                 await self.browser_context_helper.format_next_step_prompt()
             )
 
-        # 执行 think，如果视觉模型在运行时突发不可用，自动降级重试
-        has_vision_failed = False
-        while True:
-            try:
-                result = await super().think()
-                break  # 成功则跳出循环
-            except Exception as e:
-                # 从异常中提取实际异常（可能被 tenacity RetryError 包装）
-                actual_exc = e
-                # tenacity 可能在 stop 条件触发时将异常包装为 RetryError
-                if hasattr(e, "__cause__") and e.__cause__ is not None:
-                    actual_exc = e.__cause__
+        result = await super().think()
 
-                # 检查是否是视觉模型的 PermissionDeniedError（配额耗尽）
-                is_vision_403 = (
-                    self.llm != original_llm
-                    and self.llm.model in LLM._unavailable_models
-                )
-                if is_vision_403 and not has_vision_failed:
-                    has_vision_failed = True
-                    logger.warning(
-                        f"⚠️ 视觉模型 '{self.llm.model}' 在运行时不可用（配额耗尽），"
-                        f"自动降级回文本模型 '{original_llm.model}' 重试。"
-                    )
-                    # 回退到原始文本模型，移除截图，重新执行
-                    self.llm = original_llm
-                    has_browser_screenshot = False
-                    # 移除最后一条消息（包含截图的那个），避免重试时带图
-                    if self.memory.messages:
-                        self.memory.messages.pop()
-                    self.next_step_prompt = (
-                        await self.browser_context_helper.format_next_step_prompt()
-                    )
-                    continue
-                raise  # 其他错误正常抛出
-
-        # Restore original prompt (but keep vision model if browser screenshot is still present)
+        # 恢复原始 prompt
         self.next_step_prompt = original_prompt
-        # 只有在没有浏览器截图时才恢复原模型（快速模型）
-        if not has_browser_screenshot and original_llm != self.llm:
-            # 检查是否还有浏览器工具调用
-            current_browser_in_use = any(
-                tc.function.name == BrowserUseTool().name
-                for msg in self.memory.messages[-3:]
-                if hasattr(msg, 'tool_calls') and msg.tool_calls
-                for tc in msg.tool_calls
-            )
-            # 检查是否还有截图
-            current_has_screenshot = any(
-                (isinstance(msg, Message) and msg.base64_image)
-                or (isinstance(msg, dict) and msg.get("base64_image"))
-                for msg in self.memory.messages[-3:]
-            )
-            if not current_browser_in_use and not current_has_screenshot:
-                logger.debug(f"🔄 Restoring original LLM: {original_llm.model}")
-                self.llm = original_llm
 
         return result

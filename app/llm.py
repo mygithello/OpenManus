@@ -46,6 +46,7 @@ MULTIMODAL_MODELS = [
     "qwen/qwen2.5-vl-72b-instruct",  # DashScope 视觉模型
     "qwen3.7-plus",  # DashScope 视觉模型
     "qwen3.0-plus",  # DashScope 视觉模型
+    "qwen-image",  # DashScope Qwen-Image 系列视觉模型（含 qwen-image-2.0-pro-2026-06-22 等）
 ]
 
 
@@ -316,14 +317,6 @@ class LLM:
         Raises:
             ValueError: If messages are invalid or missing required fields
             TypeError: If unsupported message types are provided
-
-        Examples:
-            >>> msgs = [
-            ...     Message.system_message("You are a helpful assistant"),
-            ...     {"role": "user", "content": "Hello"},
-            ...     Message.user_message("How are you?")
-            ... ]
-            >>> formatted = LLM.format_messages(msgs)
         """
         formatted_messages = []
 

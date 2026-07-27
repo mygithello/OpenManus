@@ -157,6 +157,9 @@ class BrowserUseTool(BaseTool, Generic[Context]):
 
     llm: Optional[LLM] = Field(default_factory=LLM)
 
+    # 调试标志：每次获取状态时保存 HTML 和截图快照
+    debug_save_snapshot: bool = False
+
     @field_validator("parameters", mode="before")
     def validate_parameters(cls, v: dict, info: ValidationInfo) -> dict:
         if not v:
@@ -227,16 +230,15 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             page = await self.context.get_current_page()
 
             # 注入补充的反检测脚本，使用 try/catch 避免与 add_init_script 冲突
+            # 注意：WebGL 部分使用原函数引用 + .call，避免 Playwright 的 "Illegal invocation" 错误
             stealth_js = """
             try {
-                // 覆盖 navigator.webdriver 属性（可能已被 add_init_script 设置，跳过错误）
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
             } catch(e) {}
 
             try {
-                // 覆盖 chrome 对象
                 window.chrome = window.chrome || {
                     runtime: {},
                     loadTimes: function() {},
@@ -246,7 +248,6 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             } catch(e) {}
 
             try {
-                // 覆盖 permissions
                 const originalQuery = window.navigator.permissions.query;
                 window.navigator.permissions.query = (parameters) => (
                     parameters.name === 'notifications' ?
@@ -256,26 +257,28 @@ class BrowserUseTool(BaseTool, Generic[Context]):
             } catch(e) {}
 
             try {
-                // 覆盖 plugins 数组
                 Object.defineProperty(navigator, 'plugins', {
                     get: () => [1, 2, 3, 4, 5]
                 });
             } catch(e) {}
 
             try {
-                // 覆盖 languages
                 Object.defineProperty(navigator, 'languages', {
                     get: () => ['zh-CN', 'zh', 'en']
                 });
             } catch(e) {}
 
-            // WebGL vendor 覆盖（browser_use 未注入，始终执行）
+            // WebGL vendor 覆盖 — 保存原型方法引用，使用 Function.prototype.call 避免 Illegal invocation
             try {
-                const getParameter = WebGLRenderingContext.prototype.getParameter;
-                WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                    if (parameter === 37445) return 'Intel Inc.';
-                    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-                    return getParameter.call(this, parameter);
+                var getParamOrig = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function getParameterOverride(parameter) {
+                    try {
+                        if (parameter === 37445) return 'Intel Inc.';
+                        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+                    } catch(e) {}
+                    try { return Function.prototype.call.call(getParamOrig, this, parameter); } catch(e) {}
+                    try { return getParamOrig.call(this, parameter); } catch(e) {}
+                    return null;
                 };
             } catch(e) {}
             """
@@ -293,6 +296,603 @@ class BrowserUseTool(BaseTool, Generic[Context]):
         args = browser_config_kwargs["extra_chromium_args"]
         if isinstance(args, list) and max_flag not in args:
             args.append(max_flag)
+
+    async def _save_debug_snapshot(self, label: str) -> None:
+        """保存当前页面的 HTML 和截图到调试目录。"""
+        if not self.debug_save_snapshot:
+            return
+        try:
+            import os
+            from datetime import datetime
+
+            page = await self.context.get_current_page()
+            # 保存到项目根目录的 debug_snapshots/
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            debug_dir = os.path.join(project_root, "debug_snapshots")
+            os.makedirs(debug_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:23]
+            safe_label = label.replace("/", "_").replace(" ", "_")[:60]
+
+            # 保存 HTML
+            html = await page.content()
+            html_path = os.path.join(debug_dir, f"{timestamp}_{safe_label}.html")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            logger.info(f"💾 Debug HTML saved ({len(html)} chars) → {html_path}")
+
+            # 保存截图
+            screenshot_path = os.path.join(debug_dir, f"{timestamp}_{safe_label}.png")
+            await page.screenshot(path=screenshot_path, full_page=False)
+            logger.info(f"📸 Debug screenshot saved → {screenshot_path}")
+
+            # 保存页面文本
+            text = await page.evaluate("document.body ? document.body.innerText : ''")
+            text_path = os.path.join(debug_dir, f"{timestamp}_{safe_label}.txt")
+            with open(text_path, "w", encoding="utf-8") as f:
+                f.write(text[:5000])
+            logger.info(f"📄 Debug text saved ({len(text)} chars) → {text_path}")
+
+            # 检查 WhaleGuard/验证码特征
+            if "whaleguard" in html.lower() or "whale guard" in html.lower():
+                logger.warning("⚠️ DETECTED: Page blocked by WhaleGuard anti-bot protection!")
+            elif "captcha" in html.lower() or "verify" in html.lower():
+                logger.warning("⚠️ DETECTED: Page has captcha/verification challenge!")
+            elif "524" in html[:500] or "cloudflare" in html.lower():
+                logger.warning("⚠️ DETECTED: Cloudflare/524 challenge detected!")
+            else:
+                logger.info("✅ Page appears to be normal content")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save debug snapshot: {e}")
+
+    async def _execute_vision_action(
+        self, context: BrowserContext, vision_instruction: str, action_hint: str = "click"
+    ) -> ToolResult:
+        """
+        使用视觉模型分析截图，执行坐标级别的浏览器操作。
+        适用于动态元素（日期选择器、弹窗等）的点击和输入。
+
+        工作流程：
+        1. 截取当前页面的 viewport 截图
+        2. 调用视觉模型分析截图并生成操作指令（CLICK/TYPE/SCROLL 等）
+        3. 解析模型返回的 JSON，执行坐标操作
+        """
+        try:
+            from openai import AsyncOpenAI
+            import os
+
+            page = await context.get_current_page()
+            await page.bring_to_front()
+            await page.wait_for_load_state()
+
+            # 1. 截取 viewport 截图（不截全页，确保坐标正确）
+            screenshot_bytes = await page.screenshot(
+                type="png",
+                full_page=False,
+            )
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            image_data_url = f"data:image/png;base64,{screenshot_base64}"
+
+            logger.info(f"[vision] Taking screenshot for {action_hint} | instruction: {vision_instruction}")
+
+            # 2. 构建视觉分析 prompt
+            vision_system_prompt = """你是一个顶级的AI视觉操作代理。分析屏幕截图，理解用户指令，返回精确的GUI操作。
+
+## 可用操作
+### CLICK
+{"action": "CLICK", "parameters": {"x": <整数坐标>, "y": <整数坐标>, "description": "<点击目标的描述>"}}
+
+### TYPE
+{"action": "TYPE", "parameters": {"x": <输入框中心x>, "y": <输入框中心y>, "text": "<输入文本>", "needs_enter": false, "description": "<输入框描述>"}}
+
+### SCROLL
+{"action": "SCROLL", "parameters": {"direction": "down/up", "amount": "small/medium/large"}}
+
+### KEY_PRESS
+{"action": "KEY_PRESS", "parameters": {"key": "enter/esc/tab"}}
+
+### FINISH / FAIL
+{"action": "FINISH", "parameters": {"message": "..."}}
+{"action": "FAIL", "parameters": {"reason": "..."}}
+
+## 重要规则
+- 坐标必须是目标元素的中心位置（根据截图中的实际位置估算）
+- 输入框的坐标应该是输入框内部的中心
+- 返回内容必须是严格的 JSON 格式，不要包含 markdown 代码块标记
+"""
+
+            # 3. 调用视觉模型
+            vision_api_key = os.getenv("DASHSCOPE_API_KEY") or config.llm.get("default", {}).get("api_key", "")
+            vision_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+            client = AsyncOpenAI(api_key=vision_api_key, base_url=vision_base_url)
+
+            messages = [
+                {"role": "system", "content": vision_system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                        {"type": "text", "text": vision_instruction},
+                    ],
+                },
+            ]
+
+            logger.info(f"[vision] Calling vision model with: {vision_instruction}")
+
+            completion = await client.chat.completions.create(
+                model="qwen-vl-max",  # 使用 qwen-vl-max 视觉模型
+                messages=messages,
+            )
+
+            response_content = completion.choices[0].message.content
+            logger.info(f"[vision] Model response: {response_content[:200]}")
+
+            # 4. 解析 JSON 响应
+            # 处理模型输出中的常见格式错误
+            fixed = response_content
+            # 修复 {"x": 139, 675} -> {"x": 139, "y": 675}
+            fixed = re.sub(r'"x":\s*(\d+),\s*(\d+)\s*[,}]', lambda m: f'"x": {m.group(1)}, "y": {m.group(2)}' + (',' if m.group(0).endswith(',') else '}'), fixed)
+            # 修复 {"x": [139, 675]} -> {"x": 139, "y": 675}
+            fixed = re.sub(r'"x":\s*\[(\d+),\s*(\d+)\]', r'"x": \1, "y": \2', fixed)
+
+            json_match = re.search(r'\{[\s\S]*\}', fixed)
+            if not json_match:
+                return ToolResult(error=f"[vision] Failed to parse JSON from model response: {response_content[:200]}")
+
+            try:
+                result = json.loads(json_match.group())
+            except json.JSONDecodeError as e:
+                json_str = json_match.group()
+                open_braces = json_str.count('{')
+                close_braces = json_str.count('}')
+                if open_braces > close_braces:
+                    try:
+                        result = json.loads(json_str + '}' * (open_braces - close_braces))
+                    except json.JSONDecodeError:
+                        return ToolResult(error=f"[vision] JSON parse failed: {e} | response: {response_content[:200]}")
+                else:
+                    return ToolResult(error=f"[vision] JSON parse failed: {e} | response: {response_content[:200]}")
+
+            action_type = result.get("action", "").strip().upper()
+            params = result.get("parameters", {})
+            thought = result.get("thought", "")
+
+            # 如果 action 类型缺失但包含坐标，自动推断
+            if not action_type:
+                if result.get("x") is not None or params.get("x") is not None:
+                    action_type = "TYPE" if result.get("text") or params.get("text") else "CLICK"
+                    if not params:
+                        params = result
+
+            logger.info(f"[vision] Decision: action={action_type}, thought={thought}")
+
+            # 5. 执行操作
+            if action_type == "CLICK":
+                x = params.get("x")
+                y = params.get("y")
+                description = params.get("description", "")
+
+                # 处理坐标格式
+                if isinstance(x, list) and len(x) >= 2:
+                    x, y = x[0], x[1]
+                if isinstance(y, list) and len(y) >= 1:
+                    y = y[0]
+
+                if x is None or y is None:
+                    return ToolResult(error=f"[vision] CLICK missing coordinates: {params}")
+                try:
+                    x, y = int(x), int(y)
+                except (ValueError, TypeError):
+                    return ToolResult(error=f"[vision] CLICK invalid coordinates: x={x}, y={y}")
+
+                logger.info(f"[vision] CLICK at ({x}, {y}): {description}")
+                await page.mouse.click(x, y)
+                await asyncio.sleep(0.5)
+                return ToolResult(output=f"[vision] Clicked ({x}, {y}): {description}")
+
+            elif action_type == "TYPE":
+                text_to_type = params.get("text", "")
+                needs_enter = params.get("needs_enter", False)
+                description = params.get("description", "input")
+
+                if not text_to_type:
+                    return ToolResult(error="[vision] TYPE missing text")
+
+                x = params.get("x")
+                y = params.get("y")
+
+                if isinstance(x, list) and len(x) >= 2:
+                    x, y = x[0], x[1]
+                if isinstance(y, list) and len(y) >= 1:
+                    y = y[0]
+
+                if x is not None and y is not None:
+                    try:
+                        x, y = int(x), int(y)
+                    except (ValueError, TypeError):
+                        pass
+                    logger.info(f"[vision] TYPE: click ({x}, {y}) then type '{text_to_type}'")
+                    await page.mouse.click(x, y)
+                    await asyncio.sleep(0.3)
+                    await page.keyboard.press("Control+a")
+                    await asyncio.sleep(0.1)
+
+                await page.keyboard.type(text_to_type)
+                if needs_enter:
+                    await page.keyboard.press("Enter")
+                await asyncio.sleep(0.3)
+                return ToolResult(output=f"[vision] Typed '{text_to_type}' into {description}")
+
+            elif action_type == "SCROLL":
+                direction = params.get("direction", "down")
+                amount = params.get("amount", "medium")
+                pixels = {"small": 100, "medium": 300, "large": 600}.get(amount, 300)
+                await page.mouse.wheel(0, -pixels if direction == "up" else pixels)
+                return ToolResult(output=f"[vision] Scrolled {direction} {amount}")
+
+            elif action_type == "KEY_PRESS":
+                key = params.get("key", "")
+                if key:
+                    await page.keyboard.press(key)
+                    return ToolResult(output=f"[vision] Pressed key: {key}")
+                return ToolResult(error="[vision] KEY_PRESS missing key")
+
+            elif action_type in ("FINISH", "FAIL"):
+                msg = params.get("message") or params.get("reason", "")
+                return ToolResult(
+                    output=f"[vision] {'Finished' if action_type == 'FINISH' else 'Failed'}: {msg}"
+                    if action_type == "FINISH"
+                    else None,
+                    error=f"[vision] Failed: {msg}" if action_type == "FAIL" else None,
+                )
+
+            return ToolResult(error=f"[vision] Unknown action: {action_type}")
+
+        except Exception as e:
+            logger.error(f"[vision] Execution failed: {e}")
+            return ToolResult(error=f"[vision] Execution error: {str(e)}")
+
+    async def _execute_smart_click(
+        self, context: BrowserContext, element_description: str
+    ) -> ToolResult:
+        """
+        智能点击：通过 JavaScript 提取可见可点击元素，用 LLM 匹配后坐标点击。
+        比 Playwright 的文本匹配更灵活，能处理动态生成的元素。
+        """
+        try:
+            page = await context.get_current_page()
+            await page.bring_to_front()
+            await page.wait_for_load_state()
+
+            # 1. 获取视窗内可见的可点击元素信息（含 bounding box）
+            elements_info = await page.evaluate("""
+                () => {
+                    const elements = [];
+                    const vh = window.innerHeight;
+                    const vw = window.innerWidth;
+
+                    // 收集标准可点击元素
+                    const clickables = document.querySelectorAll(
+                        'button, a, [onclick], [role="button"], input[type="submit"], ' +
+                        'input[type="button"], [class*="btn"], [class*="button"], ' +
+                        'label, select, summary, [tabindex]:not([tabindex="-1"])'
+                    );
+                    clickables.forEach((el) => {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.y >= 0 && r.y < vh && r.x >= 0 && r.x < vw) {
+                            elements.push({
+                                tag: el.tagName.toLowerCase(),
+                                text: (el.innerText || el.value || el.placeholder || '').trim().substring(0, 80),
+                                type: el.type || '',
+                                ariaLabel: el.getAttribute('aria-label') || '',
+                                rect: { x: r.x, y: r.y, w: r.width, h: r.height }
+                            });
+                        }
+                    });
+
+                    // 收集日期/日历元素
+                    document.querySelectorAll(
+                        'div[class*="date"], div[class*="day"], span[class*="date"], ' +
+                        'span[class*="day"], td[class*="date"], td[class*="day"], ' +
+                        'div[class*="calendar"], [class*="DatePicker"]'
+                    ).forEach((el) => {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.y >= 0 && r.y < vh && r.x >= 0 && r.x < vw) {
+                            elements.push({
+                                tag: el.tagName.toLowerCase(),
+                                text: (el.innerText || '').trim().substring(0, 30),
+                                type: 'date-element',
+                                ariaLabel: el.getAttribute('aria-label') || '',
+                                rect: { x: r.x, y: r.y, w: r.width, h: r.height }
+                            });
+                        }
+                    });
+
+                    return elements.slice(0, 150);
+                }
+            """)
+
+            if not elements_info:
+                logger.warning("[smart] No clickable elements found in viewport")
+                # 回退到视觉模型
+                return await self._execute_vision_action(context, f"点击{element_description}", "click")
+
+            # 2. 用 LLM 匹配最佳元素
+            elements_text = "\n".join([
+                f"[{i}] <{e['tag']}> text='{e['text']}' aria='{e.get('ariaLabel', '')}'"
+                for i, e in enumerate(elements_info)
+            ])
+
+            prompt = f"""根据用户描述找到最匹配的可点击元素。
+
+用户描述: {element_description}
+
+页面元素:
+{elements_text}
+
+只返回最佳元素索引数字（0-{len(elements_info)-1}）。如果完全不匹配返回 -1。"""
+
+            response = await self.llm.ask(
+                messages=[{"role": "user", "content": prompt}],
+                system_msgs=[{"role": "system", "content": "你是精确的页面元素匹配器，只返回数字索引。"}]
+            )
+
+            match = re.search(r'-?\d+', response)
+            idx = int(match.group()) if match else -1
+
+            if idx < 0 or idx >= len(elements_info):
+                logger.warning(f"[smart] LLM no match for '{element_description}', falling back to vision")
+                return await self._execute_vision_action(context, f"点击{element_description}", "click")
+
+            target = elements_info[idx]
+            click_x = target['rect']['x'] + target['rect']['w'] / 2
+            click_y = target['rect']['y'] + target['rect']['h'] / 2
+
+            logger.info(f"[smart] Click '{element_description}' → [{idx}] {target['tag']} '{target['text'][:30]}' at ({click_x:.0f}, {click_y:.0f})")
+
+            await page.mouse.click(click_x, click_y)
+            await asyncio.sleep(0.5)
+            return ToolResult(output=f"[smart] Clicked [{idx}] {target['tag']} '{target['text'][:40]}'")
+
+        except Exception as e:
+            logger.error(f"[smart] Click failed: {e}")
+            return await self._execute_vision_action(context, f"点击{element_description}", "click")
+
+    async def _execute_smart_input(
+        self, context: BrowserContext, element_description: str, text: str
+    ) -> ToolResult:
+        """
+        智能输入：通过 JavaScript 提取可见输入框，用 LLM 匹配后坐标输入。
+        """
+        try:
+            page = await context.get_current_page()
+            await page.bring_to_front()
+            await page.wait_for_load_state()
+
+            # 1. 获取视窗内可见输入框信息
+            inputs_info = await page.evaluate("""
+                () => {
+                    const inputs = [];
+                    const vh = window.innerHeight;
+
+                    const selectors = 'input[type="text"], input[type="search"], ' +
+                        'input:not([type]), textarea, [contenteditable="true"], ' +
+                        '[role="textbox"], [role="combobox"], [role="searchbox"]';
+
+                    document.querySelectorAll(selectors).forEach((el) => {
+                        const r = el.getBoundingClientRect();
+                        if (r.width > 0 && r.height > 0 && r.y >= 0 && r.y < vh) {
+                            const parentLabel = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
+                            const labelText = parentLabel ? parentLabel.innerText.trim() : '';
+
+                            // 获取父容器文本
+                            const parent = el.closest('div, label, li, form, fieldset');
+                            const parentText = parent ? parent.innerText.split('\\n')[0].trim().substring(0, 40) : '';
+
+                            inputs.push({
+                                tag: el.tagName.toLowerCase(),
+                                placeholder: el.placeholder || '',
+                                value: el.value || '',
+                                name: el.name || '',
+                                id: el.id || '',
+                                className: el.className || '',
+                                ariaLabel: el.getAttribute('aria-label') || '',
+                                labelText: labelText,
+                                parentText: parentText,
+                                rect: { x: r.x, y: r.y, w: r.width, h: r.height }
+                            });
+                        }
+                    });
+                    return inputs;
+                }
+            """)
+
+            if not inputs_info:
+                logger.warning("[smart] No input fields found in viewport")
+                return await self._execute_vision_action(context, f"在{element_description}输入'{text}'", "type")
+
+            # 2. 用 LLM 匹配最佳输入框
+            inputs_text = "\n".join([
+                f"[{i}] placeholder='{inp['placeholder']}' label='{inp['labelText']}' aria='{inp['ariaLabel']}' parent='{inp['parentText']}'"
+                for i, inp in enumerate(inputs_info)
+            ])
+
+            prompt = f"""根据用户描述找到最匹配的输入框。
+
+用户描述: {element_description}
+
+输入框列表:
+{inputs_text}
+
+只返回最佳输入框索引数字（0-{len(inputs_info)-1}）。如果完全不匹配返回 -1。"""
+
+            response = await self.llm.ask(
+                messages=[{"role": "user", "content": prompt}],
+                system_msgs=[{"role": "system", "content": "你是精确的输入框匹配器，只返回数字索引。"}]
+            )
+
+            match = re.search(r'-?\d+', response)
+            idx = int(match.group()) if match else -1
+
+            if idx < 0 or idx >= len(inputs_info):
+                logger.warning(f"[smart] LLM no input match for '{element_description}', trying vision")
+                return await self._execute_vision_action(context, f"在{element_description}输入'{text}'", "type")
+
+            target = inputs_info[idx]
+            click_x = target['rect']['x'] + target['rect']['w'] / 2
+            click_y = target['rect']['y'] + target['rect']['h'] / 2
+
+            logger.info(f"[smart] Input '{element_description}' → [{idx}] placeholder='{target['placeholder']}' at ({click_x:.0f}, {click_y:.0f})")
+
+            # 点击 + 输入
+            await page.mouse.click(click_x, click_y)
+            await asyncio.sleep(0.3)
+            await page.keyboard.press("Control+a")
+            await asyncio.sleep(0.1)
+            await page.keyboard.type(text)
+            await asyncio.sleep(0.3)
+
+            return ToolResult(output=f"[smart] Typed '{text}' into [{idx}] '{target['placeholder'] or target['labelText'] or element_description}'")
+
+        except Exception as e:
+            logger.error(f"[smart] Input failed: {e}")
+            return await self._execute_vision_action(context, f"在{element_description}输入'{text}'", "type")
+
+    # =====================
+    # Tiered click / type
+    # =====================
+
+    async def _click(self, context: BrowserContext, element_description: str) -> ToolResult:
+        """
+        分层次点击：Playwright locator → 智能 HTML 匹配 → 视觉模型
+        """
+        try:
+            page = await context.get_current_page()
+            await page.bring_to_front()
+            await page.wait_for_load_state()
+
+            logger.info(f"[click] Trying to click: '{element_description}'")
+
+            # Tier 0: 日期类描述 → 直接视觉模型（更可靠）
+            # 日期选择器中的元素动态渲染，Playwright 难以通过文本定位
+            is_date_like = (
+                element_description.isdigit() or
+                bool(re.search(r'^\d+[日号]?$', element_description)) or
+                bool(re.search(r'\d+月\d+[日号]?', element_description)) or
+                "日历" in element_description or
+                "calendar" in element_description.lower()
+            )
+
+            if is_date_like:
+                logger.info(f"[click] Date-like description, trying Playwright locator first")
+                # 先尝试普通文本查找
+                day_match = re.search(r'(\d+)', element_description)
+                if day_match:
+                    day_num = day_match.group(1)
+                    try:
+                        locator = page.locator(f"text={day_num}").last
+                        if await locator.is_visible():
+                            await locator.click()
+                            await asyncio.sleep(0.5)
+                            return ToolResult(output=f"[click] Playwright clicked date: {day_num}")
+                    except Exception:
+                        pass
+                # 回退到视觉模型
+                return await self._execute_vision_action(context, f"点击日历中的{element_description}", "click")
+
+            # Tier 1: Playwright locator 精确匹配
+            try:
+                locator = page.get_by_text(element_description, exact=True)
+                if await locator.count() > 0:
+                    for i in range(await locator.count()):
+                        el = locator.nth(i)
+                        if await el.is_visible():
+                            box = await el.bounding_box()
+                            if box and box['y'] < 600:
+                                cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                                logger.info(f"[click] Exact match: '{element_description}' at ({cx:.0f}, {cy:.0f})")
+                                await page.mouse.click(cx, cy)
+                                await asyncio.sleep(0.5)
+                                return ToolResult(output=f"[click] Clicked '{element_description}'")
+
+                # 包含文字匹配（限制文本长度防止误匹配）
+                locator = page.get_by_text(element_description, exact=False)
+                if await locator.count() > 0:
+                    for i in range(min(await locator.count(), 10)):
+                        el = locator.nth(i)
+                        if await el.is_visible():
+                            tc = await el.text_content()
+                            if tc and len(tc.strip()) <= len(element_description) * 3:
+                                box = await el.bounding_box()
+                                if box and box['y'] < 600:
+                                    cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                                    logger.info(f"[click] Partial match: '{tc[:30]}' at ({cx:.0f}, {cy:.0f})")
+                                    await page.mouse.click(cx, cy)
+                                    await asyncio.sleep(0.5)
+                                    return ToolResult(output=f"[click] Clicked '{tc[:30]}'")
+            except Exception:
+                pass
+
+            # Tier 2: Smart click (JavaScript + LLM)
+            logger.info(f"[click] Playwright failed, trying smart click")
+            return await self._execute_smart_click(context, element_description)
+
+        except Exception as e:
+            logger.error(f"[click] Error: {e}")
+            return ToolResult(error=f"[click] Failed: {str(e)}")
+
+    async def _type(self, context: BrowserContext, element_description: str, text: str) -> ToolResult:
+        """
+        分层次输入：Playwright locator → 智能 HTML 匹配 → 视觉模型
+        """
+        try:
+            page = await context.get_current_page()
+            await page.bring_to_front()
+            await page.wait_for_load_state()
+
+            logger.info(f"[type] Trying to type '{text}' into '{element_description}'")
+
+            # Tier 1: Playwright locator
+            clicked = False
+            click_x, click_y = None, None
+
+            for strategy_fn in [
+                lambda: page.get_by_placeholder(element_description),
+                lambda: page.get_by_role("textbox", name=element_description, exact=False),
+                lambda: page.get_by_label(element_description, exact=False),
+                lambda: page.get_by_text(element_description, exact=False),
+                lambda: page.locator(f'[aria-label*="{element_description}"], [data-label*="{element_description}"]'),
+            ]:
+                if clicked:
+                    break
+                try:
+                    locator = strategy_fn()
+                    if await locator.count() > 0:
+                        el = locator.first
+                        if await el.is_visible():
+                            box = await el.bounding_box()
+                            if box:
+                                click_x, click_y = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+                                await page.mouse.click(click_x, click_y)
+                                clicked = True
+                except Exception:
+                    pass
+
+            if clicked and click_x is not None:
+                await asyncio.sleep(0.3)
+                await page.keyboard.press("Control+a")
+                await asyncio.sleep(0.1)
+                await page.keyboard.type(text)
+                await asyncio.sleep(0.3)
+                return ToolResult(output=f"[type] Typed '{text}' into '{element_description}'")
+
+            # Tier 2: Smart input (JavaScript + LLM)
+            logger.info(f"[type] Playwright failed, trying smart input")
+            return await self._execute_smart_input(context, element_description, text)
+
+        except Exception as e:
+            logger.error(f"[type] Error: {e}")
+            return ToolResult(error=f"[type] Failed: {str(e)}")
 
     async def execute(
         self,
@@ -370,110 +970,32 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                     await page.goto(url)
                     await page.wait_for_load_state()
 
+                    # 导航后保存调试快照
+                    await self._save_debug_snapshot(f"navigate_{url[:50]}")
+
                     if url != original_url:
                         return ToolResult(output=f"Navigated to {url} (日期已自动修正)")
                     return ToolResult(output=f"Navigated to {url}")
 
                 elif action == "click":
                     """
-                    点击元素（通过文字描述查找），不依赖 index。
-                    支持通过元素文本、标签内容等描述来定位元素。
+                    点击元素（通过文字描述查找）。
+                    自动路由到最佳策略：Playwright → 智能 HTML 匹配 → 视觉模型。
                     """
                     if not element_description:
                         return ToolResult(error="element_description is required for 'click' action")
-                    try:
-                        page = await context.get_current_page()
-                        # 尝试多种选择器策略
-                        # 1. 按文本查找可见元素
-                        try:
-                            locator = page.get_by_role("button", name=element_description, exact=False)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                return ToolResult(output=f"Clicked element: {element_description}")
-                        except Exception:
-                            pass
-                        # 2. 按文本查找链接
-                        try:
-                            locator = page.get_by_role("link", name=element_description, exact=False)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                return ToolResult(output=f"Clicked link: {element_description}")
-                        except Exception:
-                            pass
-                        # 3. 按通用文本定位
-                        try:
-                            locator = page.get_by_text(element_description, exact=False)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                return ToolResult(output=f"Clicked element by text: {element_description}")
-                        except Exception:
-                            pass
-                        # 4. 按占位符（placeholder）查找 input
-                        try:
-                            locator = page.get_by_placeholder(element_description)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                return ToolResult(output=f"Clicked input with placeholder: {element_description}")
-                        except Exception:
-                            pass
-                        # 5. 按标签名查找
-                        try:
-                            locator = page.locator(element_description)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                return ToolResult(output=f"Clicked element by selector: {element_description}")
-                        except Exception:
-                            pass
-                        return ToolResult(output=f"Could not find element matching '{element_description}', but continuing")
-                    except Exception as e:
-                        return ToolResult(error=f"Failed to click element '{element_description}': {str(e)}")
+                    return await self._click(context, element_description)
 
                 elif action == "type":
                     """
-                    输入文本（通过文字描述查找输入框），不依赖 index。
+                    输入文本（通过文字描述查找输入框）。
+                    自动路由到最佳策略：Playwright → 智能 HTML 匹配 → 视觉模型。
                     """
-                    if not element_description or not text:
-                        return ToolResult(error="element_description and text are required for 'type' action")
-                    try:
-                        page = await context.get_current_page()
-                        # 1. 先点击目标元素
-                        clicked = False
-                        try:
-                            locator = page.get_by_placeholder(element_description)
-                            if await locator.count() > 0:
-                                await locator.first.click()
-                                clicked = True
-                        except Exception:
-                            pass
-                        if not clicked:
-                            try:
-                                locator = page.get_by_role("textbox", name=element_description, exact=False)
-                                if await locator.count() > 0:
-                                    await locator.first.click()
-                                    clicked = True
-                            except Exception:
-                                pass
-                        if not clicked:
-                            try:
-                                locator = page.get_by_label(element_description, exact=False)
-                                if await locator.count() > 0:
-                                    await locator.first.click()
-                                    clicked = True
-                            except Exception:
-                                pass
-                        if not clicked:
-                            try:
-                                locator = page.get_by_text(element_description, exact=False)
-                                if await locator.count() > 0:
-                                    await locator.first.click()
-                                    clicked = True
-                            except Exception:
-                                pass
-                        # 2. 输入文本
-                        await page.keyboard.type(text)
-                        return ToolResult(output=f"Typed '{text}' into element: {element_description}")
-                    except Exception as e:
-                        return ToolResult(error=f"Failed to type into element '{element_description}': {str(e)}")
+                    if not element_description:
+                        return ToolResult(error="element_description is required for 'type' action")
+                    if not text:
+                        return ToolResult(error="text is required for 'type' action")
+                    return await self._type(context, element_description, text)
 
                 elif action == "go_back":
                     await context.go_back()
@@ -508,10 +1030,66 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         return ToolResult(
                             error="Index is required for 'click_element' action"
                         )
+
+                    page = await context.get_current_page()
+
+                    # 检测点击前状态（确定是否点击日期相关元素）
+                    elements_before = ""
+                    try:
+                        state_before = await context.get_state()
+                        if state_before and state_before.element_tree:
+                            elements_before = state_before.element_tree.clickable_elements_to_string()
+                            if elements_before:
+                                element_lines = elements_before.split("\n")
+                                if index < len(element_lines):
+                                    element_line = element_lines[index]
+                                    if any(kw in element_line.lower() for kw in ["日期", "date", "出发", "departure", "calendar", "日历"]):
+                                        logger.info(f"📅 Clicking date-related element (index {index}): {element_line[:100]}")
+                    except Exception:
+                        pass
+
                     element = await context.get_dom_element_by_index(index)
                     if not element:
                         return ToolResult(error=f"Element with index {index} not found")
                     download_path = await context._click_element_node(element)
+
+                    # 等待页面稳定
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass
+
+                    # 如果是日期相关元素，等待日期选择器打开后检测元素变化
+                    if elements_before:
+                        await asyncio.sleep(1)
+                        try:
+                            state_after = await context.get_state()
+                            if state_after and state_after.element_tree:
+                                elements_after = state_after.element_tree.clickable_elements_to_string()
+                                count_before = elements_before.count("[")
+                                count_after = elements_after.count("[") if elements_after else 0
+                                if abs(count_after - count_before) > 10:
+                                    logger.info(f"📅 Element count changed after click: {count_before} -> {count_after} (date picker opened)")
+                                    # 保存日期选择器打开后的 HTML
+                                    html_content = await page.content()
+                                    from pathlib import Path
+                                    debug_dir = Path("debug_html")
+                                    debug_dir.mkdir(exist_ok=True)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    filepath = debug_dir / f"{timestamp}_date_picker_opened.html"
+                                    with open(filepath, "w", encoding="utf-8") as f:
+                                        f.write(html_content)
+                                    logger.info(f"💾 Saved date picker HTML to {filepath}")
+
+                                    if elements_after:
+                                        ef = debug_dir / f"{timestamp}_date_picker_elements.txt"
+                                        with open(ef, "w", encoding="utf-8") as f:
+                                            f.write(elements_after)
+                                        logger.info(f"💾 Saved date picker elements to {ef}")
+                                    await asyncio.sleep(1)
+                        except Exception:
+                            pass
+
                     output = f"Clicked element at index {index}"
                     if download_path:
                         output += f" - Downloaded file to {download_path}"
@@ -726,12 +1304,15 @@ Page content:
 
             state = await ctx.get_state()
 
-            # 如果不存在，创建 viewport_info 字典
+            # 检查窗口大小
             viewport_height = 0
             if hasattr(state, "viewport_info") and state.viewport_info:
                 viewport_height = state.viewport_info.height
             elif hasattr(ctx, "config") and hasattr(ctx.config, "browser_window_size"):
                 viewport_height = ctx.config.browser_window_size.get("height", 0)
+
+            # 保存调试快照
+            await self._save_debug_snapshot(f"state_{state.title or 'untitled'}")
 
             # 使用 browser_use 内部已生成的截图（viewport 截图，与 DOM 坐标对齐）
             # 避免重新 full_page 截图导致高亮标签位置与页面元素不匹配
@@ -768,6 +1349,28 @@ Page content:
                 lines = interactive_elements_str.split("\n")[:5]
                 preview = "\n".join(lines)
                 logger.debug(f"🔍 Elements preview (first 5):\n{preview}")
+
+            # 自动保存 HTML 到调试目录（特别用于检测日期选择器等问题）
+            try:
+                page_src = await ctx.get_current_page()
+                html_content = await page_src.content()
+                from pathlib import Path
+                debug_dir = Path("debug_html")
+                debug_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                url_safe = (state.url or "").replace("https://", "").replace("http://", "")
+                url_safe = re.sub(r'[?&=:/<>"|*\\]', '_', url_safe)[:50]
+                html_path = debug_dir / f"{timestamp}_{url_safe}.html"
+                with open(html_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                logger.info(f"💾 Saved HTML ({len(html_content)} chars) to {html_path}")
+                if element_count < 150 and "flights" in (state.url or ""):
+                    elem_path = debug_dir / f"{timestamp}_elements.txt"
+                    with open(elem_path, "w", encoding="utf-8") as f:
+                        f.write(f"URL: {state.url}\nElement Count: {element_count}\n\n{interactive_elements_str}")
+                    logger.info(f"💾 Saved elements info to {elem_path}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to save debug HTML: {e}")
 
             # 构建包含所有必需字段的状态信息
             state_info = {

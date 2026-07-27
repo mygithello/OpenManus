@@ -61,13 +61,10 @@ class BrowserContextHelper:
             if pixels_below > 0:
                 content_below_info = f" ({pixels_below} pixels)"
 
+            # 截图不传给主 LLM（视觉模型由 browser_use_tool 内置处理）
+            # 仅用于调试日志
             if self._current_base64_image:
-                image_message = Message.user_message(
-                    content="Current browser screenshot:",
-                    base64_image=self._current_base64_image,
-                )
-                self.agent.memory.add_message(image_message)
-                self._current_base64_image = None  # 添加图像后消费
+                self._current_base64_image = None  # 丢弃截图，浏览器工具自身处理视觉
 
         return NEXT_STEP_PROMPT.format(
             url_placeholder=url_info,
